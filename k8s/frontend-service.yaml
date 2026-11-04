@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: talentmatch-frontend
+  namespace: talentmatch
+  labels:
+    app.kubernetes.io/name: talentmatch-ai
+    app.kubernetes.io/component: frontend
+spec:
+  type: NodePort
+  selector:
+    app: talentmatch-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      nodePort: 30080

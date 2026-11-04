@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: talentmatch-config
+  namespace: talentmatch
+  labels:
+    app.kubernetes.io/name: talentmatch-ai
+    app.kubernetes.io/component: config
+data:
+  ENVIRONMENT: "production"
+  PROJECT_NAME: "TalentMatch AI"
+  PORT: "8000"
+  HOST: "0.0.0.0"
+  ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "1440"
+  DATABASE_URL: "sqlite:////app/data/talentmatch.db"
+  UPLOAD_DIR: "/app/uploads"
+  MAX_UPLOAD_SIZE_MB: "10"
+  WEIGHT_SKILLS: "0.50"
+  WEIGHT_KEYWORDS: "0.30"
+  WEIGHT_EXPERIENCE: "0.20"

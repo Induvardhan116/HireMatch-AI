@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: talentmatch-backend
+  namespace: talentmatch
+  labels:
+    app.kubernetes.io/name: talentmatch-ai
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: talentmatch-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: talentmatch-backend
+        app.kubernetes.io/name: talentmatch-ai
+        app.kubernetes.io/component: backend
+    spec:
+      containers:
+        - name: backend
+          image: talentmatch-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: talentmatch-config
+            - secretRef:
+                name: talentmatch-secret
+          volumeMounts:
+            - name: data-storage
+              mountPath: /app/data
+            - name: uploads-storage
+              mountPath: /app/uploads
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: data-storage
+          persistentVolumeClaim:
+            claimName: talentmatch-data-pvc
+        - name: uploads-storage
+          persistentVolumeClaim:
+            claimName: talentmatch-uploads-pvc
