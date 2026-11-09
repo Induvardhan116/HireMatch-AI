@@ -1,8 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: talentmatch
+  name: hirematch
   labels:
-    app.kubernetes.io/name: talentmatch-ai
-    app.kubernetes.io/part-of: talentmatch-platform
-
+    app.kubernetes.io/name: hirematch-ai
+    app.kubernetes.io/part-of: hirematch-platform

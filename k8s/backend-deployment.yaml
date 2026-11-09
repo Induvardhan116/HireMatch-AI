@@ -1,40 +1,38 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: talentmatch-backend
-  namespace: talentmatch
+  name: hirematch-backend
+  namespace: hirematch
   labels:
-    app.kubernetes.io/name: talentmatch-ai
+    app.kubernetes.io/name: hirematch-ai
     app.kubernetes.io/component: backend
 spec:
-  replicas: 2
+  # Set to 1 replica to prevent SQLite database file concurrency locks
+  replicas: 1
   selector:
     matchLabels:
-      app: talentmatch-backend
+      app: hirematch-backend
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   template:
     metadata:
       labels:
-        app: talentmatch-backend
-        app.kubernetes.io/name: talentmatch-ai
+        app: hirematch-backend
+        app.kubernetes.io/name: hirematch-ai
         app.kubernetes.io/component: backend
     spec:
       containers:
         - name: backend
-          image: talentmatch-backend:latest
+          image: hirematch-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
               name: http
           envFrom:
             - configMapRef:
-                name: talentmatch-config
+                name: hirematch-config
             - secretRef:
-                name: talentmatch-secret
+                name: hirematch-secret
           volumeMounts:
             - name: data-storage
               mountPath: /app/data
@@ -66,8 +64,7 @@ spec:
       volumes:
         - name: data-storage
           persistentVolumeClaim:
-            claimName: talentmatch-data-pvc
+            claimName: hirematch-data-pvc
         - name: uploads-storage
           persistentVolumeClaim:
-            claimName: talentmatch-uploads-pvc
-
+            claimName: hirematch-uploads-pvc

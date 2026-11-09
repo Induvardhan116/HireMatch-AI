@@ -1,10 +1,10 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: talentmatch-ingress
-  namespace: talentmatch
+  name: hirematch-ingress
+  namespace: hirematch
   labels:
-    app.kubernetes.io/name: talentmatch-ai
+    app.kubernetes.io/name: hirematch-ai
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/proxy-body-size: "15m"
@@ -16,14 +16,13 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: talentmatch-backend
+                name: hirematch-backend
                 port:
                   number: 8000
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: talentmatch-frontend
+                name: hirematch-frontend
                 port:
                   number: 80
-
