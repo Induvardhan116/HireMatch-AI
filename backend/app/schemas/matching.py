@@ -33,3 +33,4 @@ class MatchAnalysisResult(BaseModel):
     job_title: Optional[str] = None
     job_company: Optional[str] = None
     candidate_name: Optional[str] = None
+

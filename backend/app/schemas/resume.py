@@ -14,6 +14,7 @@ class ResumeResponse(ResumeBase):
     summary: Optional[str] = None
     extracted_experience_years: float
     skills: List[str] = []
+    categorized_skills: Dict[str, List[str]] = {}
     education: List[Dict[str, Any]] = []
     experience: List[Dict[str, Any]] = []
     keywords: List[str] = []
@@ -22,6 +23,10 @@ class ResumeResponse(ResumeBase):
 
     class Config:
         from_attributes = True
+
+class ResumeSkillsUpdateRequest(BaseModel):
+    skills: List[str]
+    categorized_skills: Optional[Dict[str, List[str]]] = None
 
 class ResumeDetailResponse(ResumeResponse):
     extracted_text: str
@@ -32,3 +37,4 @@ class ResumeAnalysisRequest(BaseModel):
     job_id: Optional[int] = None
     custom_job_description: Optional[str] = None
     custom_job_title: Optional[str] = None
+

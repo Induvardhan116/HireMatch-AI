@@ -531,3 +531,4 @@ export const ResumeAnalysisPage: React.FC = () => {
     </div>
   );
 };
+

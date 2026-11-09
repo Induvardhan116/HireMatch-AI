@@ -53,3 +53,4 @@ All accounts use password: `talentmatch123`
 | **JOB SEEKER** | `elena.dev@gmail.com` | Elena Rostova | Senior Full Stack Engineer (React/FastAPI) |
 | **JOB SEEKER** | `marcus.cloud@outlook.com` | Marcus Brody | DevOps & Cloud Engineer (Kubernetes/AWS) |
 | **JOB SEEKER** | `ananya.data@yahoo.com` | Ananya Sharma | Machine Learning & Data Engineer |
+

@@ -18,6 +18,20 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
+    # Block public admin registration
+    if user_in.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration for Admin accounts is not permitted. Admin accounts must be created by an existing administrator or system initialization."
+        )
+
+    # Validate confirm password if provided
+    if user_in.confirm_password and user_in.password != user_in.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match. Please verify your password."
+        )
+
     # Check if user already exists
     existing = db.query(User).filter(User.email == user_in.email.lower()).first()
     if existing:
@@ -64,6 +78,13 @@ def login_json(credentials: UserLogin, db: Session = Depends(get_db)):
     if not user.is_active:
         raise HTTPException(status_code=400, detail="User account is deactivated")
 
+    # Step 8 & 9: Verify that the selected role matches the database role
+    if credentials.role is not None and user.role != credentials.role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied: Account role mismatch. This account is registered as a {user.role.value.replace('_', ' ').title()}, not as a {credentials.role.value.replace('_', ' ').title()}."
+        )
+
     access_token = create_access_token(
         data={"sub": user.email, "role": user.role.value, "user_id": user.id}
     )
@@ -99,6 +120,8 @@ def login_oauth(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+ALLOWED_PROFILE_FIELDS = {"full_name", "phone", "bio", "current_title", "company_name"}
+
 @router.put("/me", response_model=UserResponse)
 def update_me(
     user_update: UserUpdate,
@@ -106,9 +129,12 @@ def update_me(
     db: Session = Depends(get_db)
 ):
     update_data = user_update.dict(exclude_unset=True)
+    # Never allow updating role or system fields from /me
     for field, value in update_data.items():
-        setattr(current_user, field, value)
+        if field in ALLOWED_PROFILE_FIELDS:
+            setattr(current_user, field, value)
         
     db.commit()
     db.refresh(current_user)
     return current_user
+

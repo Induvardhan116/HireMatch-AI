@@ -191,3 +191,4 @@ def get_recruitment_summary_report(
         )
         
     return report_data
+

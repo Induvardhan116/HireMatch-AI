@@ -20,3 +20,4 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ message = "Loadi
     </div>
   );
 };
+

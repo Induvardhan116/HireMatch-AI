@@ -10,7 +10,7 @@ from app.database import get_db
 from app.models.user import User, UserRole
 from app.models.resume import Resume
 from app.models.job import Job
-from app.schemas.resume import ResumeResponse, ResumeDetailResponse, ResumeAnalysisRequest
+from app.schemas.resume import ResumeResponse, ResumeDetailResponse, ResumeAnalysisRequest, ResumeSkillsUpdateRequest
 from app.schemas.matching import MatchAnalysisResult
 from app.services.auth_service import get_current_user
 from app.services.resume_parser import parse_resume
@@ -36,6 +36,7 @@ def resume_to_response(resume: Resume) -> dict:
         "summary": resume.summary,
         "extracted_experience_years": resume.extracted_experience_years,
         "skills": resume.skills_list,
+        "categorized_skills": resume.categorized_skills_dict,
         "education": resume.education_list,
         "experience": resume.experience_list,
         "keywords": resume.keywords_list,
@@ -99,6 +100,7 @@ async def upload_resume(
         file_size=file_size,
         extracted_text=parsed_data["extracted_text"],
         extracted_skills=json.dumps(parsed_data["skills"]),
+        extracted_categorized_skills=json.dumps(parsed_data.get("categorized_skills", {})),
         extracted_education=json.dumps(parsed_data["education"]),
         extracted_experience_years=parsed_data["experience_years"],
         extracted_experience_details=json.dumps(parsed_data["experience_details"]),
@@ -165,6 +167,31 @@ def delete_resume(
     db.delete(resume)
     db.commit()
     return None
+
+@router.put("/{resume_id}/skills", response_model=ResumeResponse)
+def update_resume_skills(
+    resume_id: int,
+    skills_in: ResumeSkillsUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+        
+    if current_user.role != UserRole.ADMIN and resume.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this resume")
+        
+    resume.extracted_skills = json.dumps(skills_in.skills)
+    if skills_in.categorized_skills:
+        resume.extracted_categorized_skills = json.dumps(skills_in.categorized_skills)
+    else:
+        from app.services.resume_parser import categorize_skills_list
+        resume.extracted_categorized_skills = json.dumps(categorize_skills_list(skills_in.skills))
+        
+    db.commit()
+    db.refresh(resume)
+    return resume_to_response(resume)
 
 @router.post("/analyze", response_model=MatchAnalysisResult)
 def analyze_resume_against_job(
@@ -245,3 +272,4 @@ def analyze_resume_against_job(
     )
     
     return result
+

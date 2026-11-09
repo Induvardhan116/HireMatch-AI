@@ -73,26 +73,45 @@ def get_jobs(
 
 @router.get("/recommendations/me")
 def get_job_recommendations_for_user(
+    resume_id: Optional[int] = None,
+    search: Optional[str] = None,
+    location: Optional[str] = None,
+    experience_level: Optional[str] = None,
+    min_match: Optional[float] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Ranks active jobs against candidate's primary resume skills and experience.
+    Ranks active jobs against candidate's resume skills and experience.
     Returns matched jobs with instant match percentage and highlighted skills.
     """
-    primary_resume = db.query(Resume).filter(
-        Resume.user_id == current_user.id
-    ).order_by(Resume.is_primary.desc(), Resume.created_at.desc()).first()
+    if resume_id:
+        primary_resume = db.query(Resume).filter(
+            Resume.id == resume_id,
+            Resume.user_id == current_user.id
+        ).first()
+    else:
+        primary_resume = db.query(Resume).filter(
+            Resume.user_id == current_user.id
+        ).order_by(Resume.is_primary.desc(), Resume.created_at.desc()).first()
     
-    active_jobs = db.query(Job).filter(Job.is_active == True).all()
-    
+    query = db.query(Job).filter(Job.is_active == True)
+    if search:
+        s = f"%{search}%"
+        query = query.filter((Job.title.ilike(s)) | (Job.company.ilike(s)) | (Job.description.ilike(s)))
+    if location:
+        query = query.filter(Job.location.ilike(f"%{location}%"))
+    if experience_level and experience_level != "All":
+        query = query.filter(Job.experience_level == experience_level)
+        
+    active_jobs = query.all()
     recommendations = []
     
     if not primary_resume:
-        # If no resume uploaded yet, return jobs with 0 match
         for job in active_jobs:
             resp = job_to_response(job)
             resp["recommendation_score"] = 0.0
+            resp["skill_match_percentage"] = 0.0
             resp["matched_skills"] = []
             resp["missing_skills"] = job.skills_list
             recommendations.append(resp)
@@ -115,12 +134,21 @@ def get_job_recommendations_for_user(
             job_company=job.company
         )
         
+        # Calculate raw skill percentage: matching required / total required * 100
+        req_skills_lower = {s.lower().strip() for s in job.skills_list}
+        r_skills_lower = {s.lower().strip() for s in resume_skills}
+        matched_req = [s for s in job.skills_list if s.lower().strip() in r_skills_lower]
+        raw_skill_pct = round((len(matched_req) / max(len(job.skills_list), 1)) * 100.0, 1) if job.skills_list else 100.0
+
         resp = job_to_response(job)
         resp["recommendation_score"] = match_result["match_score"]
+        resp["skill_match_percentage"] = raw_skill_pct
         resp["matched_skills"] = match_result["matched_skills"]
         resp["missing_skills"] = match_result["missing_skills"]
         resp["score_breakdown"] = match_result["breakdown"]
-        recommendations.append(resp)
+        
+        if min_match is None or match_result["match_score"] >= min_match or raw_skill_pct >= min_match:
+            recommendations.append(resp)
         
     # Sort recommendations by highest match score
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
@@ -201,3 +229,4 @@ def delete_job(
     db.delete(job)
     db.commit()
     return None
+

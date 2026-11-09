@@ -30,6 +30,7 @@ export interface Resume {
   summary?: string;
   extracted_experience_years: number;
   skills: string[];
+  categorized_skills?: Record<string, string[]>;
   education: Array<{ degree: string; field: string; year?: string; raw_text?: string }>;
   experience: Array<{ title: string; context: string }>;
   keywords: string[];
@@ -59,6 +60,7 @@ export interface Job {
   applications_count?: number;
   // Recommendations augmentation
   recommendation_score?: number;
+  skill_match_percentage?: number;
   matched_skills?: string[];
   missing_skills?: string[];
 }
@@ -190,3 +192,4 @@ export interface RecruitmentSummaryReport {
   applications_by_status: Record<string, number>;
   top_hiring_roles: Array<{ role: string; applications: number }>;
 }
+

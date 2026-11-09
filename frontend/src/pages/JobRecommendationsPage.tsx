@@ -279,3 +279,4 @@ export const JobRecommendationsPage: React.FC = () => {
     </div>
   );
 };
+

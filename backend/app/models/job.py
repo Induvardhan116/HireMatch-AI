@@ -46,3 +46,4 @@ class Job(Base):
             return json.loads(self.nice_to_have_skills) if self.nice_to_have_skills else []
         except:
             return []
+

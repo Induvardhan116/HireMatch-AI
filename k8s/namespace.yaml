@@ -5,3 +5,4 @@ metadata:
   labels:
     app.kubernetes.io/name: talentmatch-ai
     app.kubernetes.io/part-of: talentmatch-platform
+

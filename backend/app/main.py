@@ -13,7 +13,7 @@ try:
     with SessionLocal() as db:
         seed_database(db)
 except Exception as e:
-    print(f"[TalentMatch AI] Seed check: {e}")
+    print(f"[HireMatch AI] Seed check: {e}")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -53,10 +53,11 @@ def root():
 def health_check():
     return {
         "status": "healthy",
-        "service": "talentmatch-backend",
+        "service": "hirematch-backend",
         "database": "connected"
     }
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+

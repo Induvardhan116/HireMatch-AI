@@ -176,3 +176,4 @@ def update_application_status(
     db.commit()
     db.refresh(app)
     return application_to_response(app)
+

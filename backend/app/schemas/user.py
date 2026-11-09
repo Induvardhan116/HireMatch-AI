@@ -14,10 +14,12 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    confirm_password: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    role: Optional[UserRole] = None
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
@@ -25,7 +27,6 @@ class UserUpdate(BaseModel):
     bio: Optional[str] = None
     current_title: Optional[str] = None
     company_name: Optional[str] = None
-    is_active: Optional[bool] = None
 
 class UserResponse(UserBase):
     id: int
@@ -44,3 +45,4 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
+

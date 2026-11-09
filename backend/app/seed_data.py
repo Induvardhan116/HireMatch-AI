@@ -319,3 +319,4 @@ def seed_database(db: Session):
     db.add_all([app1, app2])
     db.commit()
     print("[TalentMatch AI] Database seeded successfully with demo users, jobs, and applications.")
+

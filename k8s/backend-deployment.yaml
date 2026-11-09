@@ -70,3 +70,4 @@ spec:
         - name: uploads-storage
           persistentVolumeClaim:
             claimName: talentmatch-uploads-pvc
+

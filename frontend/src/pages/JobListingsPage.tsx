@@ -449,3 +449,4 @@ export const JobListingsPage: React.FC = () => {
     </div>
   );
 };
+

@@ -65,3 +65,4 @@ networks:
   talentmatch-net:
     name: talentmatch_network
     driver: bridge
+

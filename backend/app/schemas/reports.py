@@ -58,3 +58,4 @@ class RecruitmentSummaryReport(BaseModel):
     average_match_score: float
     applications_by_status: Dict[str, int]
     top_hiring_roles: List[Dict[str, Any]]
+

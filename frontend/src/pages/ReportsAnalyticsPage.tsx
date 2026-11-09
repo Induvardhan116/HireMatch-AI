@@ -115,7 +115,7 @@ export const ReportsAnalyticsPage: React.FC = () => {
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-semibold mb-2">
             <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
-            <span>TalentMatch Executive BI Suite</span>
+            <span>HireMatch AI Executive BI Suite</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Recruitment Analytics & Reports</h1>
           <p className="text-xs text-slate-500 mt-1">
@@ -482,3 +482,4 @@ export const ReportsAnalyticsPage: React.FC = () => {
     </div>
   );
 };
+

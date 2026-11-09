@@ -127,7 +127,7 @@ export const Sidebar: React.FC = () => {
 
       {/* Footer Info */}
       <div className="p-4 border-t border-slate-100 text-[11px] text-slate-400 text-center">
-        TalentMatch AI v1.0.0
+        HireMatch AI v1.0.0
         <div className="text-[10px] text-slate-400 mt-0.5">Explainable NLP Engine</div>
       </div>
     </aside>

@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "TalentMatch AI"
+    PROJECT_NAME: str = "HireMatch AI"
     ENVIRONMENT: str = "development"
     SECRET_KEY: str = "talentmatch-ai-insecure-default-change-in-production-super-secret-key"
     ALGORITHM: str = "HS256"
@@ -29,3 +29,4 @@ settings = Settings()
 
 # Ensure uploads directory exists
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+

@@ -53,3 +53,4 @@ export const StatusBadge: React.FC<{ status: ApplicationStatus | string }> = ({ 
       return <Badge variant="secondary">Applied</Badge>;
   }
 };
+

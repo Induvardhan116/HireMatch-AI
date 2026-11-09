@@ -19,6 +19,29 @@ import { ManageJobsPage } from './pages/ManageJobsPage';
 import { CandidateManagementPage } from './pages/CandidateManagementPage';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { ReportsAnalyticsPage } from './pages/ReportsAnalyticsPage';
+import { AccessDeniedPage } from './pages/AccessDeniedPage';
+import { getDashboardRoute } from './utils/navigation';
+
+// Route Guard for unauthenticated pages (Login & Register):
+// If the user is already authenticated, immediately redirects them to their canonical dashboard.
+const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-3">
+        <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-500 text-xs font-medium">Verifying session...</p>
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to={getDashboardRoute(user.role)} replace />;
+  }
+
+  return <>{children}</>;
+};
 
 // Protected Route Guard
 const ProtectedRoute: React.FC<{
@@ -29,21 +52,21 @@ const ProtectedRoute: React.FC<{
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-500 text-xs">
-        Authenticating session...
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-3">
+        <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-slate-500 text-xs font-medium">Verifying authenticated session...</p>
       </div>
     );
   }
 
+  // Not logged in -> Redirect to login
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
+  // Logged in, but role is unauthorized for this route -> Access Denied (HTTP 403)
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // Redirect to their respective home dashboard if role mismatch
-    if (user.role === 'ADMIN') return <Navigate to="/admin" replace />;
-    if (user.role === 'RECRUITER') return <Navigate to="/recruiter" replace />;
-    return <Navigate to="/dashboard" replace />;
+    return <AccessDeniedPage userRole={user.role} allowedRoles={allowedRoles} />;
   }
 
   return <>{children}</>;
@@ -68,19 +91,23 @@ export function App() {
             <Route
               path="/login"
               element={
-                <div className="min-h-screen bg-slate-50 flex flex-col">
-                  <Navbar />
-                  <LoginPage />
-                </div>
+                <PublicOnlyRoute>
+                  <div className="min-h-screen bg-slate-50 flex flex-col">
+                    <Navbar />
+                    <LoginPage />
+                  </div>
+                </PublicOnlyRoute>
               }
             />
             <Route
               path="/register"
               element={
-                <div className="min-h-screen bg-slate-50 flex flex-col">
-                  <Navbar />
-                  <RegisterPage />
-                </div>
+                <PublicOnlyRoute>
+                  <div className="min-h-screen bg-slate-50 flex flex-col">
+                    <Navbar />
+                    <RegisterPage />
+                  </div>
+                </PublicOnlyRoute>
               }
             />
             <Route

@@ -65,3 +65,4 @@ class Application(Base):
             return json.loads(self.recommendations) if self.recommendations else []
         except:
             return []
+

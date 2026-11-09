@@ -417,3 +417,4 @@ export const CandidateManagementPage: React.FC = () => {
     </div>
   );
 };
+

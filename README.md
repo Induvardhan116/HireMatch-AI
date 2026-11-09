@@ -533,3 +533,4 @@ npm run build
 ```
 
 Compiles TypeScript cleanly with zero errors to produce production assets in `frontend/dist/`.
+

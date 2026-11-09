@@ -17,6 +17,7 @@ class Resume(Base):
     # Extracted data
     extracted_text = Column(Text, nullable=False)
     extracted_skills = Column(Text, default="[]") # JSON list of strings
+    extracted_categorized_skills = Column(Text, default="{}") # JSON categorized skills
     extracted_education = Column(Text, default="[]") # JSON list of dicts/strings
     extracted_experience_years = Column(Float, default=0.0)
     extracted_experience_details = Column(Text, default="[]") # JSON list of experiences
@@ -39,6 +40,18 @@ class Resume(Base):
             return []
 
     @property
+    def categorized_skills_dict(self):
+        try:
+            if self.extracted_categorized_skills:
+                loaded = json.loads(self.extracted_categorized_skills)
+                if loaded and isinstance(loaded, dict) and any(loaded.values()):
+                    return loaded
+        except:
+            pass
+        from app.services.resume_parser import categorize_skills_list
+        return categorize_skills_list(self.skills_list)
+
+    @property
     def education_list(self):
         try:
             return json.loads(self.extracted_education) if self.extracted_education else []
@@ -58,3 +71,4 @@ class Resume(Base):
             return json.loads(self.extracted_keywords) if self.extracted_keywords else []
         except:
             return []
+
