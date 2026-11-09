@@ -473,7 +473,7 @@ export const ReportsAnalyticsPage: React.FC = () => {
               </div>
 
               <div className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400">
-                Data generated via TalentMatch Executive Reporting API.
+                Data generated via HireMatch Executive Reporting API.
               </div>
             </div>
           </div>

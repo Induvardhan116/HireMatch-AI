@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/component: config
 data:
   ENVIRONMENT: "production"
-  PROJECT_NAME: "TalentMatch AI"
+  PROJECT_NAME: "HireMatch AI"
   PORT: "8000"
   HOST: "0.0.0.0"
   ALGORITHM: "HS256"

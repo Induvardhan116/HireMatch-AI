@@ -1,7 +1,7 @@
-# TalentMatch AI – Project Status & Phase Verification Log
+# HireMatch AI – Project Status & Phase Verification Log
 
 **Last Updated:** Current Execution  
-**Project:** TalentMatch AI – AI-Based Resume Screening and Job Recommendation Portal  
+**Project:** HireMatch AI – AI-Based Resume Screening and Job Recommendation Portal
 **Status:** Complete & Fully Functional (All 7 Phases Verified)
 
 ---
@@ -53,4 +53,3 @@ All accounts use password: `talentmatch123`
 | **JOB SEEKER** | `elena.dev@gmail.com` | Elena Rostova | Senior Full Stack Engineer (React/FastAPI) |
 | **JOB SEEKER** | `marcus.cloud@outlook.com` | Marcus Brody | DevOps & Cloud Engineer (Kubernetes/AWS) |
 | **JOB SEEKER** | `ananya.data@yahoo.com` | Ananya Sharma | Machine Learning & Data Engineer |
-

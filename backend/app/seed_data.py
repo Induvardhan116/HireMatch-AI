@@ -12,7 +12,7 @@ def seed_database(db: Session):
     if db.query(User).first():
         return # Already seeded
 
-    print("[TalentMatch AI] Seeding database with initial data...")
+    print("[HireMatch AI] Seeding database with initial data...")
 
     # 1. Create Default Users (Password: 'talentmatch123' for all)
     pw = get_password_hash("talentmatch123")
@@ -318,5 +318,5 @@ def seed_database(db: Session):
 
     db.add_all([app1, app2])
     db.commit()
-    print("[TalentMatch AI] Database seeded successfully with demo users, jobs, and applications.")
+    print("[HireMatch AI] Database seeded successfully with demo users, jobs, and applications.")
 

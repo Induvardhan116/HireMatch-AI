@@ -521,7 +521,7 @@ export const ResumeAnalysisPage: React.FC = () => {
               </div>
 
               <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                <span>Evaluated via TalentMatch NLP Engine</span>
+                <span>Evaluated via HireMatch NLP Engine</span>
                 <span className="font-semibold text-indigo-600">Score: {analysisResult.match_score}%</span>
               </div>
             </div>

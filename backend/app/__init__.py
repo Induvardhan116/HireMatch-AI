@@ -1,3 +1,3 @@
-# TalentMatch AI Backend
+# HireMatch AI Backend
 __version__ = "1.0.0"
 

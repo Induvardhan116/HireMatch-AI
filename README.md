@@ -1,4 +1,4 @@
-# TalentMatch AI – AI-Based Resume Screening and Job Recommendation Portal
+# HireMatch AI – AI-Based Resume Screening and Job Recommendation Portal
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18+-61DAFB.svg?style=flat&logo=react&logoColor=black)](https://react.dev)
@@ -8,10 +8,10 @@
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-Manifests-326CE5.svg?style=flat&logo=kubernetes&logoColor=white)](https://kubernetes.io)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**TalentMatch AI** is an enterprise-grade AI Resume Screening and Job Recommendation SaaS portal. Inspired by the workflow and transparency of modern ATS optimization tools (such as Jobscan), TalentMatch AI provides candidates with explainable ATS match scoring and empowers recruiters with a streamlined, AI-assisted screening pipeline.
+**HireMatch AI** is an enterprise-grade AI Resume Screening and Job Recommendation SaaS portal. Inspired by the workflow and transparency of modern ATS optimization tools (such as Jobscan), HireMatch AI provides candidates with explainable ATS match scoring and empowers recruiters with a streamlined, AI-assisted screening pipeline.
 
 > [!NOTE]
-> **Zero Black-Box Mystery:** TalentMatch AI explicitly rejects opaque black-box machine learning scoring. Every match percentage is driven by a mathematically verified and explainable Natural Language Processing (NLP) pipeline based on technical skill overlap, TF-IDF cosine similarity, and experience parity.
+> **Zero Black-Box Mystery:** HireMatch AI explicitly rejects opaque black-box machine learning scoring. Every match percentage is driven by a mathematically verified and explainable Natural Language Processing (NLP) pipeline based on technical skill overlap, TF-IDF cosine similarity, and experience parity.
 
 ---
 
@@ -108,7 +108,7 @@ flowchart TD
 
 ## 4. Explainable AI / NLP Matching Engine
 
-TalentMatch AI uses an explainable Natural Language Processing matching methodology.
+HireMatch AI uses an explainable Natural Language Processing matching methodology.
 
 ### Scoring Formula
 
@@ -180,7 +180,7 @@ $$\text{Overall Score} = (\text{Skill Score} \times 0.50) + (\text{Keyword Score
 ## 6. Folder Structure
 
 ```
-talentmatch-ai/
+hirematch-ai/
 ├── backend/
 │   ├── app/
 │   │   ├── models/           # SQLAlchemy ORM models (User, Resume, Job, Application)

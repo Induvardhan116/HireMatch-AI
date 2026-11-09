@@ -1,4 +1,4 @@
-# Production Dockerfile for TalentMatch AI Backend
+# Production Dockerfile for HireMatch AI Backend
 FROM python:3.12-slim
 
 # Prevent Python from writing .pyc and enable unbuffered output
