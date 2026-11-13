@@ -25,15 +25,25 @@ export const ResumeUploadPage: React.FC = () => {
   const [selectedResume, setSelectedResume] = useState<Resume | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [settingPrimaryId, setSettingPrimaryId] = useState<number | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [previewText, setPreviewText] = useState<string | null>(null);
 
-  const fetchResumes = async () => {
+  const fetchResumes = async (preferredId?: number) => {
     try {
       const resp = await api.get<Resume[]>('/resumes/');
       setResumes(resp.data);
-      if (resp.data.length > 0 && !selectedResume) {
-        setSelectedResume(resp.data[0]);
+      if (resp.data.length > 0) {
+        const target =
+          (preferredId && resp.data.find((r) => r.id === preferredId)) ||
+          (selectedResume && resp.data.find((r) => r.id === selectedResume.id)) ||
+          resp.data.find((r) => r.is_primary) ||
+          resp.data[0];
+        setSelectedResume(target);
+      } else {
+        setSelectedResume(null);
       }
     } catch (err) {
       console.error(err);
@@ -48,36 +58,64 @@ export const ResumeUploadPage: React.FC = () => {
   }, []);
 
   const handleFileUpload = async (file: File) => {
+    setUploadError(null);
     // Validate file type
     const validExts = ['.pdf', '.docx'];
-    const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    const dotIdx = file.name.lastIndexOf('.');
+    const fileExt = dotIdx >= 0 ? file.name.substring(dotIdx).toLowerCase() : '';
     if (!validExts.includes(fileExt)) {
-      showToast('Please upload a PDF (.pdf) or Word document (.docx)', 'error');
+      const msg = 'Unsupported file format. Please upload a PDF (.pdf) or Word document (.docx).';
+      setUploadError(msg);
+      showToast(msg, 'error');
       return;
     }
 
     // Validate size (10 MB max)
     if (file.size > 10 * 1024 * 1024) {
-      showToast('File size must be under 10MB.', 'error');
+      const msg = 'File size exceeds the 10 MB maximum limit.';
+      setUploadError(msg);
+      showToast(msg, 'error');
       return;
     }
 
     setUploading(true);
+    setUploadProgress(15);
     const formData = new FormData();
     formData.append('file', file);
 
     try {
       const resp = await api.post<Resume>('/resumes/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (evt) => {
+          if (evt.total) {
+            const pct = Math.min(90, Math.round((evt.loaded / evt.total) * 90));
+            setUploadProgress(pct);
+          }
+        },
       });
-      showToast('Resume uploaded and parsed successfully!', 'success');
-      setResumes((prev) => [resp.data, ...prev]);
-      setSelectedResume(resp.data);
+      setUploadProgress(100);
+      showToast(`Resume "${resp.data.filename}" uploaded and parsed successfully!`, 'success');
+      await fetchResumes(resp.data.id);
     } catch (err: any) {
       const msg = err.response?.data?.detail || 'Failed to process resume file.';
-      showToast(msg, 'error');
+      setUploadError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      showToast(typeof msg === 'string' ? msg : 'Upload failed', 'error');
     } finally {
       setUploading(false);
+      setUploadProgress(0);
+    }
+  };
+
+  const handleSetPrimary = async (id: number) => {
+    setSettingPrimaryId(id);
+    try {
+      await api.patch<Resume>(`/resumes/${id}/primary`);
+      showToast('Active primary resume updated!', 'success');
+      await fetchResumes(id);
+    } catch (err: any) {
+      const msg = err.response?.data?.detail || 'Failed to set active resume.';
+      showToast(msg, 'error');
+    } finally {
+      setSettingPrimaryId(null);
     }
   };
 
@@ -105,11 +143,7 @@ export const ResumeUploadPage: React.FC = () => {
     try {
       await api.delete(`/resumes/${id}`);
       showToast('Resume deleted.', 'info');
-      const updated = resumes.filter((r) => r.id !== id);
-      setResumes(updated);
-      if (selectedResume?.id === id) {
-        setSelectedResume(updated.length > 0 ? updated[0] : null);
-      }
+      await fetchResumes();
     } catch (err) {
       showToast('Failed to delete resume.', 'error');
     }
@@ -154,9 +188,12 @@ export const ResumeUploadPage: React.FC = () => {
           type="file"
           id="resume-file-input"
           accept=".pdf,.docx"
+          disabled={uploading}
           onChange={(e) => {
-            if (e.target.files && e.target.files[0]) {
-              handleFileUpload(e.target.files[0]);
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) {
+              handleFileUpload(file);
             }
           }}
           className="hidden"
@@ -175,11 +212,31 @@ export const ResumeUploadPage: React.FC = () => {
 
         <label
           htmlFor="resume-file-input"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition cursor-pointer shadow-sm hover:shadow"
+          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition cursor-pointer shadow-sm hover:shadow ${
+            uploading ? 'opacity-60 pointer-events-none' : ''
+          }`}
         >
           <Upload className="w-3.5 h-3.5" />
-          <span>{uploading ? 'Extracting Text...' : 'Select File'}</span>
+          <span>{uploading ? `Uploading & Extracting (${uploadProgress}%)...` : 'Select File'}</span>
         </label>
+
+        {uploading && (
+          <div className="max-w-xs mx-auto mt-4">
+            <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {uploadError && (
+          <div className="max-w-md mx-auto mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center justify-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{uploadError}</span>
+          </div>
+        )}
       </div>
 
       {/* Two-Column Resumes & Extracted Data Viewer */}
@@ -208,7 +265,7 @@ export const ResumeUploadPage: React.FC = () => {
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center justify-center uppercase shrink-0">
                         {resume.file_type}
                       </div>
@@ -221,22 +278,35 @@ export const ResumeUploadPage: React.FC = () => {
                     </div>
 
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDelete(resume.id);
                       }}
-                      className="text-slate-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition"
+                      className="text-slate-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition shrink-0"
                       title="Delete resume"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
 
-                  {resume.is_primary && (
-                    <div className="mt-2.5">
-                      <Badge variant="primary" size="sm">Primary ATS Resume</Badge>
-                    </div>
-                  )}
+                  <div className="mt-2.5 flex items-center justify-between gap-2">
+                    {resume.is_primary ? (
+                      <Badge variant="primary" size="sm">Active ATS Resume</Badge>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={settingPrimaryId === resume.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSetPrimary(resume.id);
+                        }}
+                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition disabled:opacity-50"
+                      >
+                        {settingPrimaryId === resume.id ? 'Setting...' : 'Set Active'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })

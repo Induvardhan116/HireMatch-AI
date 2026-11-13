@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.user import User, UserRole
-from app.schemas.user import UserResponse, UserUpdate
+from app.schemas.user import AdminUserUpdate, UserResponse
 from app.services.auth_service import get_current_user, require_roles
 
 router = APIRouter(prefix="/api/users", tags=["Users Management"])
@@ -48,18 +48,21 @@ def get_user_by_id(
 @router.put("/{user_id}", response_model=UserResponse)
 def update_user_by_id(
     user_id: int,
-    user_update: UserUpdate,
+    user_update: AdminUserUpdate,
     current_user: User = Depends(require_roles([UserRole.ADMIN])),
     db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-        
-    update_data = user_update.dict(exclude_unset=True)
+
+    if current_user.id == user_id and user_update.is_active is False:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own admin account")
+
+    update_data = user_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(user, field, value)
-        
+
     db.commit()
     db.refresh(user)
     return user

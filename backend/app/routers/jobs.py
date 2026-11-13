@@ -1,7 +1,7 @@
 import json
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.models.user import User, UserRole
@@ -68,7 +68,7 @@ def get_jobs(
     if skill:
         query = query.filter(Job.required_skills.ilike(f"%{skill}%"))
         
-    jobs = query.order_by(Job.created_at.desc()).offset(skip).limit(limit).all()
+    jobs = query.options(joinedload(Job.applications)).order_by(Job.created_at.desc()).offset(skip).limit(limit).all()
     return [job_to_response(j) for j in jobs]
 
 @router.get("/recommendations/me")
@@ -154,6 +154,23 @@ def get_job_recommendations_for_user(
     recommendations.sort(key=lambda x: x["recommendation_score"], reverse=True)
     return recommendations
 
+
+@router.get("/my", response_model=List[JobResponse])
+def get_my_jobs(
+    active_only: Optional[bool] = None,
+    current_user: User = Depends(require_roles([UserRole.RECRUITER, UserRole.ADMIN])),
+    db: Session = Depends(get_db)
+):
+    """Returns job postings owned by the authenticated recruiter, or all jobs for admin."""
+    query = db.query(Job).options(joinedload(Job.applications))
+    if current_user.role != UserRole.ADMIN:
+        query = query.filter(Job.recruiter_id == current_user.id)
+    if active_only is not None:
+        query = query.filter(Job.is_active == active_only)
+    jobs = query.order_by(Job.created_at.desc()).all()
+    return [job_to_response(j) for j in jobs]
+
+
 @router.get("/{job_id}", response_model=JobResponse)
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
@@ -202,7 +219,7 @@ def update_job(
     if current_user.role != UserRole.ADMIN and job.recruiter_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to edit this job posting")
         
-    update_data = job_in.dict(exclude_unset=True)
+    update_data = job_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         if field in ["required_skills", "nice_to_have_skills"] and isinstance(value, list):
             setattr(job, field, json.dumps(value))

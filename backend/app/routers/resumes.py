@@ -3,7 +3,7 @@ import uuid
 import json
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.config import settings
 from app.database import get_db
@@ -26,9 +26,12 @@ ALLOWED_MIME_TYPES = {
 }
 
 def resume_to_response(resume: Resume) -> dict:
+    owner = resume.user
     return {
         "id": resume.id,
         "user_id": resume.user_id,
+        "candidate_name": owner.full_name if owner else None,
+        "candidate_email": owner.email if owner else None,
         "filename": resume.filename,
         "file_type": resume.file_type,
         "file_size": resume.file_size,
@@ -121,10 +124,30 @@ def get_user_resumes(
     db: Session = Depends(get_db)
 ):
     if current_user.role == UserRole.ADMIN:
-        resumes = db.query(Resume).order_by(Resume.created_at.desc()).all()
+        resumes = (
+            db.query(Resume)
+            .options(joinedload(Resume.user))
+            .order_by(Resume.is_primary.desc(), Resume.created_at.desc())
+            .all()
+        )
+    elif current_user.role == UserRole.RECRUITER:
+        resumes = (
+            db.query(Resume)
+            .join(User, Resume.user_id == User.id)
+            .options(joinedload(Resume.user))
+            .filter((User.role == UserRole.JOB_SEEKER) | (Resume.user_id == current_user.id))
+            .order_by(Resume.is_primary.desc(), Resume.created_at.desc())
+            .all()
+        )
     else:
-        resumes = db.query(Resume).filter(Resume.user_id == current_user.id).order_by(Resume.created_at.desc()).all()
-        
+        resumes = (
+            db.query(Resume)
+            .options(joinedload(Resume.user))
+            .filter(Resume.user_id == current_user.id)
+            .order_by(Resume.is_primary.desc(), Resume.created_at.desc())
+            .all()
+        )
+
     return [resume_to_response(r) for r in resumes]
 
 @router.get("/{resume_id}", response_model=ResumeDetailResponse)
@@ -157,6 +180,9 @@ def delete_resume(
     if current_user.role != UserRole.ADMIN and resume.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this resume")
         
+    owner_id = resume.user_id
+    was_primary = resume.is_primary
+
     # Remove file from disk
     if os.path.exists(resume.file_path):
         try:
@@ -166,7 +192,40 @@ def delete_resume(
             
     db.delete(resume)
     db.commit()
+
+    # Promote newest remaining resume to primary if the deleted one was primary
+    if was_primary:
+        next_resume = (
+            db.query(Resume)
+            .filter(Resume.user_id == owner_id)
+            .order_by(Resume.created_at.desc())
+            .first()
+        )
+        if next_resume:
+            next_resume.is_primary = True
+            db.commit()
+
     return None
+
+
+@router.patch("/{resume_id}/primary", response_model=ResumeResponse)
+def set_primary_resume(
+    resume_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    resume = db.query(Resume).filter(Resume.id == resume_id).first()
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    if current_user.role != UserRole.ADMIN and resume.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this resume")
+
+    db.query(Resume).filter(Resume.user_id == resume.user_id).update({"is_primary": False})
+    resume.is_primary = True
+    db.commit()
+    db.refresh(resume)
+    return resume_to_response(resume)
 
 @router.put("/{resume_id}/skills", response_model=ResumeResponse)
 def update_resume_skills(
@@ -214,6 +273,8 @@ def analyze_resume_against_job(
         resume = db.query(Resume).filter(Resume.id == request.resume_id).first()
         if not resume:
             raise HTTPException(status_code=404, detail="Resume not found")
+        if current_user.role not in [UserRole.ADMIN, UserRole.RECRUITER] and resume.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to analyze this resume")
         resume_text = resume.extracted_text
         resume_skills = resume.skills_list
         candidate_years = resume.extracted_experience_years

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Users,
   Search,
@@ -13,10 +13,13 @@ import {
   Send,
   X,
   MessageSquare,
-  Award
+  Award,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
-import { Application, ApplicationStatus, Job } from '../types';
+import { extractApiError, fetchManagedJobs } from '../services/jobService';
+import { ApplicationStatus, Job } from '../types';
 import { useToast } from '../context/ToastContext';
 import { Badge, StatusBadge } from '../components/common/Badge';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -27,6 +30,7 @@ export const CandidateManagementPage: React.FC = () => {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Filters
   const [selectedJobId, setSelectedJobId] = useState<string>('All');
@@ -42,31 +46,63 @@ export const CandidateManagementPage: React.FC = () => {
   // Resume inspection modal
   const [inspectResume, setInspectResume] = useState<any | null>(null);
 
-  const fetchApplications = async () => {
-    try {
-      const [reportRes, jobsRes] = await Promise.all([
-        api.get('/analytics/reports/resume-screening', {
-          params: selectedJobId !== 'All' ? { job_id: Number(selectedJobId) } : {},
-        }),
-        api.get<Job[]>('/jobs/'),
-      ]);
-      setCandidates(reportRes.data);
-      setJobs(jobsRes.data);
-    } catch (err) {
-      showToast('Failed to load candidate applications.', 'error');
-    } finally {
-      setLoading(false);
+  const fetchApplications = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    const [reportResult, jobsResult] = await Promise.allSettled([
+      api.get('/analytics/reports/resume-screening', {
+        params: selectedJobId !== 'All' ? { job_id: Number(selectedJobId) } : {},
+      }),
+      fetchManagedJobs(),
+    ]);
+
+    let failureMsg: string | null = null;
+
+    if (reportResult.status === 'fulfilled') {
+      setCandidates(Array.isArray(reportResult.value.data) ? reportResult.value.data : []);
+    } else {
+      console.error(reportResult.reason);
+      setCandidates([]);
+      failureMsg = extractApiError(reportResult.reason, 'Failed to load candidate applications.');
     }
-  };
+
+    if (jobsResult.status === 'fulfilled') {
+      setJobs(jobsResult.value);
+    } else {
+      console.error(jobsResult.reason);
+      setJobs([]);
+      if (!failureMsg) {
+        failureMsg = extractApiError(jobsResult.reason, 'Failed to load job postings filter.');
+      }
+    }
+
+    if (failureMsg) {
+      setLoadError(failureMsg);
+      showToast(failureMsg, 'error');
+    }
+
+    setLoading(false);
+  }, [selectedJobId, showToast]);
 
   useEffect(() => {
     fetchApplications();
-  }, [selectedJobId]);
+  }, [fetchApplications]);
 
-  const handleOpenDecision = (cand: any) => {
+  const handleOpenDecision = async (cand: any) => {
     setActiveCandidate(cand);
     setNewStatus(cand.status as ApplicationStatus);
-    setRecruiterNotes('');
+    setRecruiterNotes(typeof cand.recruiter_notes === 'string' ? cand.recruiter_notes : '');
+
+    if (typeof cand.recruiter_notes !== 'string') {
+      try {
+        const resp = await api.get(`/applications/${cand.application_id}`);
+        if (resp.data && typeof resp.data.recruiter_notes === 'string') {
+          setRecruiterNotes(resp.data.recruiter_notes);
+        }
+      } catch (err) {
+        console.error('Failed to prefill existing notes:', err);
+      }
+    }
   };
 
   const handleUpdateStatus = async (e: React.FormEvent) => {
@@ -99,14 +135,17 @@ export const CandidateManagementPage: React.FC = () => {
   };
 
   // Filter in memory for search & status
-  const filteredCandidates = candidates.filter((c) => {
-    const matchesSearch =
-      c.candidate_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.candidate_email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.job_title?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'All' || c.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredCandidates = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    return candidates.filter((c) => {
+      const matchesSearch =
+        c.candidate_name?.toLowerCase().includes(query) ||
+        c.candidate_email?.toLowerCase().includes(query) ||
+        c.job_title?.toLowerCase().includes(query);
+      const matchesStatus = statusFilter === 'All' || c.status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [candidates, searchQuery, statusFilter]);
 
   if (loading) {
     return <LoadingSpinner message="Loading candidate applications..." />;
@@ -121,6 +160,23 @@ export const CandidateManagementPage: React.FC = () => {
           Review candidates scored by our explainable ATS engine. Shortlist, select, or reject with notes.
         </p>
       </div>
+
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-rose-800">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchApplications}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100 transition self-start sm:self-auto"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -231,12 +287,14 @@ export const CandidateManagementPage: React.FC = () => {
                     </td>
                     <td className="py-4 px-6 text-right space-x-2">
                       <button
+                        type="button"
                         onClick={() => handleInspectResume(cand)}
                         className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold transition"
                       >
                         Inspect
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleOpenDecision(cand)}
                         className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition shadow-sm"
                       >
@@ -341,10 +399,12 @@ export const CandidateManagementPage: React.FC = () => {
                   {inspectResume.applicant?.full_name} – Candidate Evaluation
                 </h3>
                 <p className="text-xs text-slate-500">
+                  {inspectResume.applicant?.email ? `${inspectResume.applicant.email} • ` : ''}
                   ATS Match Score: <strong className="text-indigo-600">{inspectResume.match_score}%</strong> • Applied for {inspectResume.job?.title}
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setInspectResume(null)}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
               >
@@ -353,6 +413,23 @@ export const CandidateManagementPage: React.FC = () => {
             </div>
 
             <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-700">
+              {/* Resume File Metadata */}
+              {inspectResume.resume && (
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-slate-900">
+                      Resume: {inspectResume.resume.filename}
+                    </span>
+                    <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                      {inspectResume.resume.extracted_experience_years ?? 0} yrs experience
+                    </span>
+                  </div>
+                  {inspectResume.resume.summary && (
+                    <p className="text-slate-600 leading-relaxed">{inspectResume.resume.summary}</p>
+                  )}
+                </div>
+              )}
+
               {/* Cover Note */}
               {inspectResume.cover_note && (
                 <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-100">
@@ -405,6 +482,7 @@ export const CandidateManagementPage: React.FC = () => {
 
             <div className="p-4 border-t border-slate-100 text-right">
               <button
+                type="button"
                 onClick={() => setInspectResume(null)}
                 className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold"
               >

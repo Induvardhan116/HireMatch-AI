@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -11,9 +11,12 @@ import {
   X,
   Sparkles,
   Building,
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
+import { extractApiError, fetchPublicJobs } from '../services/jobService';
 import { Job, Resume } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -29,6 +32,7 @@ export const JobListingsPage: React.FC = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,24 +49,27 @@ export const JobListingsPage: React.FC = () => {
   const [coverNote, setCoverNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const params: any = {};
-      if (searchTerm) params.search = searchTerm;
-      if (locationFilter) params.location = locationFilter;
-      if (jobTypeFilter !== 'All') params.job_type = jobTypeFilter;
-      if (expLevelFilter !== 'All') params.experience_level = expLevelFilter;
-
-      const resp = await api.get<Job[]>('/jobs/', { params });
-      setJobs(resp.data);
+      const data = await fetchPublicJobs({
+        search: searchTerm,
+        location: locationFilter,
+        job_type: jobTypeFilter,
+        experience_level: expLevelFilter,
+      });
+      setJobs(data);
     } catch (err) {
       console.error(err);
-      showToast('Failed to load job listings.', 'error');
+      const msg = extractApiError(err, 'Failed to load job listings.');
+      setJobs([]);
+      setLoadError(msg);
+      showToast(msg, 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, locationFilter, jobTypeFilter, expLevelFilter, showToast]);
 
   useEffect(() => {
     fetchJobs();
@@ -211,6 +218,23 @@ export const JobListingsPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-rose-800">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchJobs}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100 transition self-start sm:self-auto"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
 
       {/* Job Cards Grid */}
       {loading ? (

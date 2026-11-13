@@ -12,11 +12,6 @@ export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // If already authenticated, never display login form -> redirect to canonical dashboard
-  if (!isLoading && user) {
-    return <Navigate to={getDashboardRoute(user.role)} replace />;
-  }
-
   const [selectedRole, setSelectedRole] = useState<UserRole>('JOB_SEEKER');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,6 +29,11 @@ export const LoginPage: React.FC = () => {
       setSelectedRole('JOB_SEEKER');
     }
   }, [searchParams]);
+
+  // If already authenticated, never display login form -> redirect to canonical dashboard
+  if (!isLoading && user) {
+    return <Navigate to={getDashboardRoute(user.role)} replace />;
+  }
 
   const getDashboardPath = (role: UserRole) => {
     switch (role) {
@@ -58,7 +58,7 @@ export const LoginPage: React.FC = () => {
       // Authenticate strictly with backend database and verify role alignment
       const authenticatedUser = await login(email, password, selectedRole);
       showToast(`Welcome back, ${authenticatedUser.full_name}!`, 'success');
-      navigate(getDashboardPath(authenticatedUser.role));
+      navigate(getDashboardPath(authenticatedUser.role), { replace: true });
     } catch (err: any) {
       const msg =
         err.response?.data?.detail ||
@@ -225,7 +225,7 @@ export const LoginPage: React.FC = () => {
               <span>Job Seeker: <code className="text-slate-700 font-semibold">elena.dev@gmail.com</code></span>
               <button
                 type="button"
-                onClick={() => handleFillCredentials('elena.dev@gmail.com', 'hirematch123', 'JOB_SEEKER')}
+                onClick={() => handleFillCredentials('elena.dev@gmail.com', 'talentmatch123', 'JOB_SEEKER')}
                 className="text-indigo-600 hover:text-indigo-800 font-semibold"
               >
                 Fill
@@ -235,17 +235,17 @@ export const LoginPage: React.FC = () => {
               <span>Recruiter: <code className="text-slate-700 font-semibold">sarah.recruiter@cloudtech.com</code></span>
               <button
                 type="button"
-                onClick={() => handleFillCredentials('sarah.recruiter@cloudtech.com', 'hirematch123', 'RECRUITER')}
+                onClick={() => handleFillCredentials('sarah.recruiter@cloudtech.com', 'talentmatch123', 'RECRUITER')}
                 className="text-blue-600 hover:text-blue-800 font-semibold"
               >
                 Fill
               </button>
             </div>
             <div className="flex items-center justify-between">
-              <span>Admin: <code className="text-slate-700 font-semibold">admin@hirematch.ai</code></span>
+              <span>Admin: <code className="text-slate-700 font-semibold">admin@talentmatch.ai</code></span>
               <button
                 type="button"
-                onClick={() => handleFillCredentials('admin@hirematch.ai', 'hirematch123', 'ADMIN')}
+                onClick={() => handleFillCredentials('admin@talentmatch.ai', 'talentmatch123', 'ADMIN')}
                 className="text-purple-600 hover:text-purple-800 font-semibold"
               >
                 Fill

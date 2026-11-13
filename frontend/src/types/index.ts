@@ -23,6 +23,8 @@ export interface AuthResponse {
 export interface Resume {
   id: number;
   user_id: number;
+  candidate_name?: string;
+  candidate_email?: string;
   filename: string;
   file_type: string;
   file_size: number;

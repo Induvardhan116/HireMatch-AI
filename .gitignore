@@ -38,3 +38,11 @@ Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
 
+
+# Local testing files
+backend/uploads_manual_test/
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/

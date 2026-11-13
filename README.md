@@ -29,13 +29,14 @@
 9. [Docker & Docker Compose Deployment](#9-docker--docker-compose-deployment)
 10. [Kubernetes Production Deployment Guide](#10-kubernetes-production-deployment-guide)
 11. [Deep-Dive: Kubernetes Architecture & Resources](#11-deep-dive-kubernetes-architecture--resources)
-12. [Environment Variables Reference](#12-environment-variables-reference)
-13. [Application Access URLs & REST API Documentation](#13-application-access-urls--rest-api-documentation)
-14. [Mandatory Business Intelligence Reports](#14-mandatory-business-intelligence-reports)
-15. [Automated Testing & Security Verification](#15-automated-testing--security-verification)
-16. [Troubleshooting Guide](#16-troubleshooting-guide)
-17. [Application Screenshots](#17-application-screenshots)
-18. [Future Roadmap](#18-future-roadmap)
+12. [Render Cloud Deployment (Without Docker)](#12-render-cloud-deployment-without-docker)
+13. [Environment Variables Reference](#13-environment-variables-reference)
+14. [Application Access URLs & REST API Documentation](#14-application-access-urls--rest-api-documentation)
+15. [Mandatory Business Intelligence Reports](#15-mandatory-business-intelligence-reports)
+16. [Automated Testing & Security Verification](#16-automated-testing--security-verification)
+17. [Troubleshooting Guide](#17-troubleshooting-guide)
+18. [Application Screenshots](#18-application-screenshots)
+19. [Future Roadmap](#19-future-roadmap)
 
 ---
 
@@ -553,7 +554,26 @@ Then open your browser at: **`http://localhost:3001`**
 
 ---
 
-## 12. Environment Variables Reference
+## 12. Render Cloud Deployment (Without Docker)
+
+HireMatch AI includes a root-level [`render.yaml`](file:///d:/DEVv/render.yaml) Blueprint for native, Docker-free deployment on Render using free-tier options where available:
+
+* **Managed PostgreSQL (`hirematch-db`):** Free-tier Render PostgreSQL database. `DATABASE_URL` is automatically linked to the backend (`postgres://` URLs are automatically normalized to `postgresql://` for SQLAlchemy + `psycopg2-binary`).
+* **Python Web Service (`hirematch-backend`):** Root directory `backend`, start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check path `/api/health`.
+* **Static Site (`hirematch-frontend`):** Root directory `frontend`, build command `npm ci && npm run build`, publish directory `dist`, SPA rewrite rule `/* -> /index.html`, and `VITE_API_URL` linked automatically from the backend's `RENDER_EXTERNAL_URL`.
+
+### Required Render Environment Variables
+* `SECRET_KEY`: Auto-generated via `generateValue: true` in `render.yaml` (required to be $\ge 32$ non-placeholder characters when `ENVIRONMENT=production`).
+* `DATABASE_URL`: Automatically injected via `fromDatabase` (`hirematch-db`).
+* `CORS_ORIGINS`: Prompted via `sync: false` — set this to your deployed Render Static Site origin (e.g., `https://hirematch-frontend.onrender.com`, no trailing slash). Wildcard `*` is strictly blocked in production.
+* `VITE_API_URL`: Automatically injected into the frontend static build via `fromService` (`RENDER_EXTERNAL_URL`).
+
+> [!WARNING]
+> **Ephemeral File Storage on Render:** Render's standard web service filesystem (used on the free tier) is **ephemeral**. Raw `.pdf` and `.docx` resume files saved to `UPLOAD_DIR` (`./uploads`) will be lost whenever the backend service restarts, spins down due to inactivity, or redeploys. However, all extracted resume text, categorized skills, education, job requisitions, and match records are stored in PostgreSQL and remain persistent. For persistent raw file downloads/storage in production, configure an S3-compatible object store or upgrade to a paid Render plan with a Persistent Disk.
+
+---
+
+## 13. Environment Variables Reference
 
 | Variable Name | Default Value | Description |
 | :--- | :--- | :--- |
@@ -561,20 +581,21 @@ Then open your browser at: **`http://localhost:3001`**
 | `ENVIRONMENT` | `production` | Deployment mode (`development`, `staging`, `production`). |
 | `PORT` | `8000` | Port on which the FastAPI Uvicorn server listens. |
 | `HOST` | `0.0.0.0` | Network binding interface for the backend server. |
-| `SECRET_KEY` | *(Random 256-bit string)* | Cryptographic key used to sign and verify JWT authentication tokens. |
+| `SECRET_KEY` | *(Required; no fallback)* | Cryptographic key used to sign and verify JWT authentication tokens. |
 | `ALGORITHM` | `HS256` | JWT signing algorithm. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES`| `1440` | JWT token validity lifespan (24 hours). |
-| `DATABASE_URL` | `sqlite:////app/data/talentmatch.db` | SQLAlchemy database connection URI. Easily overrides to PostgreSQL. |
-| `UPLOAD_DIR` | `/app/uploads` | Absolute path where uploaded resume documents are stored. |
+| `CORS_ORIGINS` | *(Local origins in dev)* | Comma-separated or JSON list of allowed frontend origins (wildcard `*` rejected in production). |
+| `DATABASE_URL` | `sqlite:////app/data/talentmatch.db` | SQLAlchemy database connection URI (`postgres://` auto-normalized to `postgresql://`). |
+| `UPLOAD_DIR` | `/app/uploads` | Absolute path where uploaded resume documents are stored (ephemeral on Render free tier). |
 | `MAX_UPLOAD_SIZE_MB` | `10` | Maximum allowable uploaded resume file size in megabytes. |
 | `WEIGHT_SKILLS` | `0.50` | AI Matching Engine weight allocated to technical skill overlap. |
 | `WEIGHT_KEYWORDS` | `0.30` | AI Matching Engine weight allocated to TF-IDF cosine similarity. |
 | `WEIGHT_EXPERIENCE` | `0.20` | AI Matching Engine weight allocated to candidate experience parity. |
-| `VITE_API_URL` | `/api` | Base API URL utilized by the React frontend client. |
+| `VITE_API_URL` | `http://localhost:8000/api` (dev) / `/api` (prod fallback) | Base API URL utilized by the React frontend client. |
 
 ---
 
-## 13. Application Access URLs & REST API Documentation
+## 14. Application Access URLs & REST API Documentation
 
 ### Environment Port Summary
 
@@ -631,7 +652,7 @@ ANALYTICS & COMPLIANCE REPORTS:
 
 ---
 
-## 14. Mandatory Business Intelligence Reports
+## 15. Mandatory Business Intelligence Reports
 
 Accessible under **Reports & Analytics** (`/admin/reports` or `/recruiter/reports`), these four operational reports feature live database aggregation, Recharts visualizations, and 1-click RFC-4180 CSV export:
 
@@ -649,7 +670,7 @@ Accessible under **Reports & Analytics** (`/admin/reports` or `/recruiter/report
 
 ---
 
-## 15. Automated Testing & Security Verification
+## 16. Automated Testing & Security Verification
 
 HireMatch AI provides standalone automated integration test suites and in-memory unit tests.
 
@@ -704,7 +725,7 @@ cd D:\DEVv\backend
 
 ---
 
-## 16. Troubleshooting Guide
+## 17. Troubleshooting Guide
 
 ### 1. PowerShell Script Execution Policy
 * **Symptom:** `.\venv\Scripts\Activate.ps1 cannot be loaded because running scripts is disabled on this system.`
@@ -744,7 +765,7 @@ cd D:\DEVv\backend
 
 ---
 
-## 17. Application Screenshots
+## 18. Application Screenshots
 
 | Screen | Description | Placeholder |
 | :--- | :--- | :---: |
@@ -755,7 +776,7 @@ cd D:\DEVv\backend
 
 ---
 
-## 18. Future Roadmap
+## 19. Future Roadmap
 
 - [ ] **PostgreSQL Migration with PgBouncer:** High-concurrency relational database configuration with automated Alembic schema migrations.
 - [ ] **Vector Database & Semantic Search:** Integration with pgvector or Pinecone for dense vector embeddings and semantic resume matching.

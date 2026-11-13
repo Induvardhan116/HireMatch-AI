@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Briefcase,
   Users,
@@ -11,9 +11,12 @@ import {
   BarChart3,
   ArrowRight,
   Eye,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
+import { fetchManagedJobs } from '../services/jobService';
 import { Job, Application } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { Badge, StatusBadge } from '../components/common/Badge';
@@ -22,31 +25,58 @@ import { EmptyState } from '../components/common/EmptyState';
 
 export const RecruiterDashboard: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<any>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [recentApplications, setRecentApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const fetchRecruiterData = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    const [statsResult, jobsResult, appsReportResult] = await Promise.allSettled([
+      api.get('/analytics/overview'),
+      fetchManagedJobs(),
+      api.get<any[]>('/analytics/reports/resume-screening')
+    ]);
+
+    let failedCount = 0;
+
+    if (statsResult.status === 'fulfilled') {
+      setStats(statsResult.value.data?.stats ?? null);
+    } else {
+      console.error('Failed to load overview stats:', statsResult.reason);
+      setStats(null);
+      failedCount++;
+    }
+
+    if (jobsResult.status === 'fulfilled') {
+      setJobs(jobsResult.value);
+    } else {
+      console.error('Failed to load recruiter jobs:', jobsResult.reason);
+      setJobs([]);
+      failedCount++;
+    }
+
+    if (appsReportResult.status === 'fulfilled') {
+      setRecentApplications(Array.isArray(appsReportResult.value.data) ? appsReportResult.value.data : []);
+    } else {
+      console.error('Failed to load screening applications:', appsReportResult.reason);
+      setRecentApplications([]);
+      failedCount++;
+    }
+
+    if (failedCount > 0) {
+      setLoadError('Some recruitment pipeline metrics could not be loaded.');
+    }
+
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    const fetchRecruiterData = async () => {
-      try {
-        const [statsRes, jobsRes, appsReportRes] = await Promise.all([
-          api.get('/analytics/overview'),
-          api.get<Job[]>('/jobs/'),
-          api.get<any[]>('/analytics/reports/resume-screening')
-        ]);
-        setStats(statsRes.data?.stats);
-        // Filter jobs posted by this recruiter or platform
-        setJobs(jobsRes.data);
-        setRecentApplications(appsReportRes.data as any);
-      } catch (err) {
-        console.error('Failed to load recruiter data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchRecruiterData();
-  }, []);
+  }, [fetchRecruiterData]);
 
   if (loading) {
     return <LoadingSpinner message="Loading recruitment pipeline..." />;
@@ -94,6 +124,23 @@ export const RecruiterDashboard: React.FC = () => {
       </div>
 
       {/* Metric Cards */}
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-rose-800">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchRecruiterData}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100 transition self-start sm:self-auto"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-sm">
           <div className="flex items-center justify-between">
@@ -102,7 +149,7 @@ export const RecruiterDashboard: React.FC = () => {
               <Briefcase className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3 text-2xl font-extrabold text-slate-900">{stats?.active_jobs || jobs.length}</div>
+          <div className="mt-3 text-2xl font-extrabold text-slate-900">{stats?.active_jobs ?? jobs.length}</div>
           <div className="mt-1 text-xs text-slate-400">Total active requisitions</div>
         </div>
 
@@ -113,7 +160,7 @@ export const RecruiterDashboard: React.FC = () => {
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3 text-2xl font-extrabold text-slate-900">{stats?.total_candidates || recentApplications.length}</div>
+          <div className="mt-3 text-2xl font-extrabold text-slate-900">{stats?.total_candidates ?? recentApplications.length}</div>
           <div className="mt-1 text-xs text-slate-400">Applications received</div>
         </div>
 
@@ -124,7 +171,7 @@ export const RecruiterDashboard: React.FC = () => {
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3 text-2xl font-extrabold text-emerald-600">{stats?.shortlisted || 1}</div>
+          <div className="mt-3 text-2xl font-extrabold text-emerald-600">{stats?.shortlisted ?? 0}</div>
           <div className="mt-1 text-xs text-slate-400">Advanced to technical round</div>
         </div>
 
@@ -135,7 +182,7 @@ export const RecruiterDashboard: React.FC = () => {
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-3 text-2xl font-extrabold text-slate-900">{stats?.average_match_score || 85.5}%</div>
+          <div className="mt-3 text-2xl font-extrabold text-slate-900">{stats?.average_match_score ?? 0}%</div>
           <div className="mt-1 text-xs text-slate-400">Calculated NLP alignment</div>
         </div>
       </div>
@@ -223,7 +270,7 @@ export const RecruiterDashboard: React.FC = () => {
             title="No Candidates Found"
             description="Create job postings to start receiving and screening applications."
             actionText="Post a Job"
-            onAction={() => {}}
+            onAction={() => navigate('/recruiter/jobs?create=1')}
           />
         )}
       </div>

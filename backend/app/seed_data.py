@@ -4,12 +4,37 @@ from app.models.user import User, UserRole
 from app.models.job import Job
 from app.models.resume import Resume
 from app.models.application import Application, ApplicationStatus
-from app.services.auth_service import get_password_hash
+from app.services.auth_service import get_password_hash, verify_password
 from app.services.matching_service import matching_engine
+
+DEMO_CREDENTIALS = {
+    "admin@talentmatch.ai": (UserRole.ADMIN, "talentmatch123"),
+    "sarah.recruiter@cloudtech.com": (UserRole.RECRUITER, "talentmatch123"),
+    "elena.dev@gmail.com": (UserRole.JOB_SEEKER, "talentmatch123"),
+}
+
+def ensure_demo_credentials(db: Session) -> None:
+    """
+    Idempotent repair for demo accounts.
+    Verifies stored password hashes for the specific 3 demo accounts.
+    Only updates hashed_password if verification fails, ensuring no re-hashing on every startup.
+    Preserves all other user records and columns untouched.
+    """
+    updated = False
+    for email, (expected_role, expected_password) in DEMO_CREDENTIALS.items():
+        user = db.query(User).filter(User.email == email).first()
+        if user and user.role == expected_role:
+            if not verify_password(expected_password, user.hashed_password):
+                user.hashed_password = get_password_hash(expected_password)
+                user.is_active = True
+                updated = True
+    if updated:
+        db.commit()
 
 def seed_database(db: Session):
     """Populates realistic demonstration data if database is empty."""
     if db.query(User).first():
+        ensure_demo_credentials(db)
         return # Already seeded
 
     print("[HireMatch AI] Seeding database with initial data...")

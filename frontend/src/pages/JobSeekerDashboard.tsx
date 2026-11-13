@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FileText,
@@ -10,7 +10,6 @@ import {
   ArrowRight,
   TrendingUp,
   Award,
-  ChevronRight,
   MapPin,
   DollarSign,
   AlertCircle,
@@ -20,7 +19,6 @@ import {
   Plus,
   Save,
   Search,
-  Filter,
   User as UserIcon,
   Phone,
   Mail,
@@ -51,7 +49,7 @@ export const JobSeekerDashboard: React.FC = () => {
   const [applications, setApplications] = useState<Application[]>([]);
   const [recommendedJobs, setRecommendedJobs] = useState<Job[]>([]);
   const [allJobs, setAllJobs] = useState<Job[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [, setStats] = useState<any>(null);
 
   // Resume Upload State
   const [uploading, setUploading] = useState(false);
@@ -88,52 +86,8 @@ export const JobSeekerDashboard: React.FC = () => {
   const [profileBio, setProfileBio] = useState(user?.bio || '');
   const [savingProfile, setSavingProfile] = useState(false);
 
-  // Initialize data
-  const fetchData = async () => {
-    try {
-      const [resumesRes, appsRes, statsRes, jobsRes] = await Promise.all([
-        api.get<Resume[]>('/resumes/'),
-        api.get<Application[]>('/applications/my'),
-        api.get('/analytics/overview'),
-        api.get<Job[]>('/jobs/'),
-      ]);
-
-      setResumes(resumesRes.data);
-      setApplications(appsRes.data);
-      setStats(statsRes.data?.stats);
-      setAllJobs(jobsRes.data);
-
-      if (resumesRes.data.length > 0) {
-        const primary = resumesRes.data.find(r => r.is_primary) || resumesRes.data[0];
-        setSelectedResume(primary);
-        initializeSkillsEditor(primary);
-      }
-
-      // Fetch personalized recommendations
-      fetchRecommendations();
-    } catch (err) {
-      console.error('Failed to load job seeker data:', err);
-      showToast('Failed to load dashboard data.', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchRecommendations = async () => {
-    try {
-      const recRes = await api.get<Job[]>('/jobs/recommendations/me');
-      setRecommendedJobs(recRes.data);
-    } catch (err) {
-      console.error('Failed to load recommendations:', err);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   // Update skills editor when selected resume changes
-  const initializeSkillsEditor = (resume: Resume) => {
+  const initializeSkillsEditor = useCallback((resume: Resume) => {
     if (resume.categorized_skills && Object.keys(resume.categorized_skills).length > 0) {
       setEditableSkills(JSON.parse(JSON.stringify(resume.categorized_skills)));
     } else {
@@ -146,7 +100,59 @@ export const JobSeekerDashboard: React.FC = () => {
         'Other / Tools': [],
       });
     }
-  };
+  }, []);
+
+  const fetchRecommendations = useCallback(async () => {
+    try {
+      const recRes = await api.get<Job[]>('/jobs/recommendations/me');
+      setRecommendedJobs(Array.isArray(recRes.data) ? recRes.data : []);
+    } catch (err) {
+      console.error('Failed to load recommendations:', err);
+    }
+  }, []);
+
+  // Initialize data
+  const fetchData = useCallback(async () => {
+    try {
+      const [resumesRes, appsRes, statsRes, jobsRes] = await Promise.allSettled([
+        api.get<Resume[]>('/resumes/'),
+        api.get<Application[]>('/applications/my'),
+        api.get('/analytics/overview'),
+        api.get<Job[]>('/jobs/'),
+      ]);
+
+      const resumeList = resumesRes.status === 'fulfilled' && Array.isArray(resumesRes.value.data) ? resumesRes.value.data : [];
+      const appList = appsRes.status === 'fulfilled' && Array.isArray(appsRes.value.data) ? appsRes.value.data : [];
+      const jobList = jobsRes.status === 'fulfilled' && Array.isArray(jobsRes.value.data) ? jobsRes.value.data : [];
+
+      setResumes(resumeList);
+      setApplications(appList);
+      setStats(statsRes.status === 'fulfilled' ? statsRes.value.data?.stats : null);
+      setAllJobs(jobList);
+
+      if (resumeList.length > 0) {
+        const primary = resumeList.find(r => r.is_primary) || resumeList[0];
+        setSelectedResume(primary);
+        initializeSkillsEditor(primary);
+      }
+
+      if (resumesRes.status === 'rejected' && appsRes.status === 'rejected') {
+        showToast('Failed to load dashboard data.', 'error');
+      }
+
+      // Fetch personalized recommendations
+      fetchRecommendations();
+    } catch (err) {
+      console.error('Failed to load job seeker data:', err);
+      showToast('Failed to load dashboard data.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchRecommendations, initializeSkillsEditor, showToast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleSelectResume = (res: Resume) => {
     setSelectedResume(res);
@@ -156,7 +162,8 @@ export const JobSeekerDashboard: React.FC = () => {
   // Upload handler
   const handleFileUpload = async (file: File) => {
     const validExts = ['.pdf', '.docx'];
-    const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    const dotIdx = file.name.lastIndexOf('.');
+    const fileExt = dotIdx >= 0 ? file.name.substring(dotIdx).toLowerCase() : '';
     if (!validExts.includes(fileExt)) {
       showToast('Please upload a PDF (.pdf) or Word document (.docx)', 'error');
       return;
@@ -168,35 +175,58 @@ export const JobSeekerDashboard: React.FC = () => {
     }
 
     setUploading(true);
-    setUploadProgress(25);
+    setUploadProgress(15);
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      setUploadProgress(65);
       const resp = await api.post<Resume>('/resumes/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (evt) => {
+          if (evt.total) {
+            setUploadProgress(Math.min(90, Math.round((evt.loaded / evt.total) * 90)));
+          }
+        },
       });
       setUploadProgress(100);
-      showToast(`Resume "${file.name}" uploaded and parsed successfully!`, 'success');
+      showToast(`Resume "${resp.data.filename}" uploaded and parsed successfully!`, 'success');
 
-      // Update resume state
-      const updatedResumes = [resp.data, ...resumes.filter(r => r.id !== resp.data.id)];
-      setResumes(updatedResumes);
-      setSelectedResume(resp.data);
-      initializeSkillsEditor(resp.data);
+      // Re-fetch resumes and overview stats from backend so dashboard counts stay exact
+      const [resumesRes, statsRes] = await Promise.all([
+        api.get<Resume[]>('/resumes/'),
+        api.get('/analytics/overview'),
+      ]);
+      setResumes(resumesRes.data);
+      setStats(statsRes.data?.stats);
+      const uploaded = resumesRes.data.find((r) => r.id === resp.data.id) || resp.data;
+      setSelectedResume(uploaded);
+      initializeSkillsEditor(uploaded);
 
-      // Re-fetch recommendations
+      // Re-fetch personalized recommendations
       fetchRecommendations();
     } catch (err: any) {
       const msg = err.response?.data?.detail || 'Failed to parse resume file.';
-      showToast(msg, 'error');
+      showToast(typeof msg === 'string' ? msg : JSON.stringify(msg), 'error');
     } finally {
       setTimeout(() => {
         setUploading(false);
         setUploadProgress(0);
-      }, 500);
+      }, 400);
+    }
+  };
+
+  const handleSetPrimaryResume = async (id: number) => {
+    try {
+      await api.patch<Resume>(`/resumes/${id}/primary`);
+      showToast('Active ATS resume updated!', 'success');
+      const resumesRes = await api.get<Resume[]>('/resumes/');
+      setResumes(resumesRes.data);
+      const active = resumesRes.data.find((r) => r.id === id) || resumesRes.data[0] || null;
+      setSelectedResume(active);
+      if (active) initializeSkillsEditor(active);
+      fetchRecommendations();
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || 'Failed to update active resume.', 'error');
     }
   };
 
@@ -224,13 +254,15 @@ export const JobSeekerDashboard: React.FC = () => {
     try {
       await api.delete(`/resumes/${id}`);
       showToast('Resume removed successfully.', 'info');
-      const updated = resumes.filter(r => r.id !== id);
-      setResumes(updated);
-      if (selectedResume?.id === id) {
-        const next = updated[0] || null;
-        setSelectedResume(next);
-        if (next) initializeSkillsEditor(next);
-      }
+      const [resumesRes, statsRes] = await Promise.all([
+        api.get<Resume[]>('/resumes/'),
+        api.get('/analytics/overview'),
+      ]);
+      setResumes(resumesRes.data);
+      setStats(statsRes.data?.stats);
+      const next = resumesRes.data.find(r => r.is_primary) || resumesRes.data[0] || null;
+      setSelectedResume(next);
+      if (next) initializeSkillsEditor(next);
       fetchRecommendations();
     } catch (err) {
       showToast('Failed to delete resume.', 'error');
@@ -452,9 +484,12 @@ export const JobSeekerDashboard: React.FC = () => {
                 type="file"
                 accept=".pdf,.docx"
                 className="hidden"
+                disabled={uploading}
                 onChange={e => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleFileUpload(e.target.files[0]);
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (file) {
+                    handleFileUpload(file);
                   }
                 }}
               />
@@ -598,9 +633,12 @@ export const JobSeekerDashboard: React.FC = () => {
               type="file"
               id="resume-file-input-main"
               accept=".pdf,.docx"
+              disabled={uploading}
               onChange={e => {
-                if (e.target.files && e.target.files[0]) {
-                  handleFileUpload(e.target.files[0]);
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) {
+                  handleFileUpload(file);
                 }
               }}
               className="hidden"
@@ -696,12 +734,30 @@ export const JobSeekerDashboard: React.FC = () => {
                         </button>
                       </div>
 
-                      {isSelected && (
-                        <div className="mt-3 pt-2 text-[11px] font-bold text-indigo-600 flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>Currently Selected for Matching</span>
-                        </div>
-                      )}
+                      <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                        {resume.is_primary ? (
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            Active ATS Resume
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              handleSetPrimaryResume(resume.id);
+                            }}
+                            className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 transition"
+                          >
+                            Set Active
+                          </button>
+                        )}
+                        {isSelected && (
+                          <span className="text-[11px] font-bold text-indigo-600 flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Selected</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

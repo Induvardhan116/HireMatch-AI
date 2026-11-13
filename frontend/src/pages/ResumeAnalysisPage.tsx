@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Sparkles,
   CheckCircle2,
@@ -13,20 +14,30 @@ import {
   TrendingUp,
   Percent,
   RefreshCw,
-  Search
+  Search,
+  Upload
 } from 'lucide-react';
 import { api } from '../services/api';
+import { extractApiError, fetchMatcherJobs } from '../services/jobService';
 import { Resume, Job, MatchAnalysisResult } from '../types';
 import { ScoreMeter } from '../components/common/ScoreMeter';
 import { Badge } from '../components/common/Badge';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 
 export const ResumeAnalysisPage: React.FC = () => {
+  const { user, isLoading: authLoading } = useAuth();
   const { showToast } = useToast();
+  const [searchParams] = useSearchParams();
+  const requestedJobIdParam = searchParams.get('jobId');
+  const requestedJobId = requestedJobIdParam ? Number(requestedJobIdParam) : NaN;
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loadingInitial, setLoadingInitial] = useState(true);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+  const [resumesError, setResumesError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   // Input modes: 'select' or 'custom'
   const [resumeMode, setResumeMode] = useState<'select' | 'custom'>('select');
@@ -38,39 +49,103 @@ export const ResumeAnalysisPage: React.FC = () => {
   const [selectedJobId, setSelectedJobId] = useState<number | ''>('');
   const [customJobTitle, setCustomJobTitle] = useState('');
   const [customJobDesc, setCustomJobDesc] = useState('');
+  const [settingPrimary, setSettingPrimary] = useState(false);
 
   // Results
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<MatchAnalysisResult | null>(null);
+  const hasAutoAnalyzedRef = useRef(false);
+
+  const isRecruiterOrAdmin = user?.role === 'RECRUITER' || user?.role === 'ADMIN';
+
+  const loadResources = useCallback(async () => {
+    if (authLoading) return;
+    setLoadingInitial(true);
+    setJobsError(null);
+    setResumesError(null);
+
+    let loadFailureMessage: string | null = null;
+
+    try {
+      const jobList = await fetchMatcherJobs(user?.role);
+      setJobs(jobList);
+      if (jobList.length > 0) {
+        const matchedRequested = Number.isFinite(requestedJobId)
+          ? jobList.find((j) => j.id === requestedJobId)
+          : undefined;
+        if (matchedRequested) {
+          setSelectedJobId(matchedRequested.id);
+          setJobMode('select');
+        } else {
+          setSelectedJobId((prev) => (prev && jobList.some((j) => j.id === prev) ? prev : jobList[0].id));
+        }
+      } else {
+        setSelectedJobId('');
+      }
+    } catch (err) {
+      console.error('Failed to load jobs:', err);
+      const msg = extractApiError(err, 'Failed to load job postings.');
+      setJobs([]);
+      setSelectedJobId('');
+      setJobsError(msg);
+      loadFailureMessage = msg;
+    }
+
+    if (user) {
+      try {
+        const resumesRes = await api.get<Resume[]>('/resumes/');
+        const resumeList = Array.isArray(resumesRes.data) ? resumesRes.data : [];
+        setResumes(resumeList);
+        if (resumeList.length > 0) {
+          const primary = resumeList.find((r) => r.is_primary) || resumeList[0];
+          setSelectedResumeId(primary.id);
+          setResumeMode('select');
+        } else {
+          setSelectedResumeId('');
+        }
+      } catch (err: any) {
+        const msg = extractApiError(err, 'Failed to load candidate resumes.');
+        setResumes([]);
+        setSelectedResumeId('');
+        setResumesError(msg);
+        if (!loadFailureMessage) {
+          loadFailureMessage = msg;
+        }
+      }
+    } else {
+      setResumes([]);
+      setSelectedResumeId('');
+      setResumeMode('custom');
+    }
+
+    if (loadFailureMessage) {
+      showToast(loadFailureMessage, 'error');
+    }
+
+    setLoadingInitial(false);
+  }, [authLoading, user?.id, user?.role, requestedJobId, showToast]);
 
   useEffect(() => {
-    const loadResources = async () => {
-      try {
-        const [resumesRes, jobsRes] = await Promise.all([
-          api.get<Resume[]>('/resumes/'),
-          api.get<Job[]>('/jobs/')
-        ]);
-        setResumes(resumesRes.data);
-        setJobs(jobsRes.data);
-
-        // Pre-select defaults
-        if (resumesRes.data.length > 0) {
-          const primary = resumesRes.data.find(r => r.is_primary) || resumesRes.data[0];
-          setSelectedResumeId(primary.id);
-        }
-        if (jobsRes.data.length > 0) {
-          setSelectedJobId(jobsRes.data[0].id);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoadingInitial(false);
-      }
-    };
     loadResources();
-  }, []);
+  }, [loadResources]);
 
-  const handleRunAnalysis = async () => {
+  const handleSetActiveResume = async (resumeId: number) => {
+    setSettingPrimary(true);
+    try {
+      await api.patch<Resume>(`/resumes/${resumeId}/primary`);
+      const resumesRes = await api.get<Resume[]>('/resumes/');
+      setResumes(resumesRes.data);
+      setSelectedResumeId(resumeId);
+      showToast('Active ATS resume updated!', 'success');
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || 'Failed to set active resume.', 'error');
+    } finally {
+      setSettingPrimary(false);
+    }
+  };
+
+  const handleRunAnalysis = useCallback(async () => {
+    setAnalysisError(null);
     // Validation
     if (resumeMode === 'select' && !selectedResumeId) {
       showToast('Please select a resume or switch to paste custom resume text.', 'error');
@@ -110,18 +185,30 @@ export const ResumeAnalysisPage: React.FC = () => {
       showToast('Match analysis calculated successfully!', 'success');
     } catch (err: any) {
       const msg = err.response?.data?.detail || 'Failed to compute match analysis.';
-      showToast(msg, 'error');
+      setAnalysisError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      showToast(typeof msg === 'string' ? msg : 'Match analysis failed', 'error');
     } finally {
       setAnalyzing(false);
     }
-  };
+  }, [resumeMode, selectedResumeId, customResumeText, jobMode, selectedJobId, customJobDesc, customJobTitle]);
 
-  // Run on mount if defaults are available
+  // Run automatically on initial load when user has a selected resume and job
   useEffect(() => {
-    if (selectedResumeId && selectedJobId && !analysisResult && !loadingInitial) {
+    if (
+      !hasAutoAnalyzedRef.current &&
+      selectedResumeId &&
+      selectedJobId &&
+      !analysisResult &&
+      !analysisError &&
+      !loadingInitial &&
+      !analyzing
+    ) {
+      hasAutoAnalyzedRef.current = true;
       handleRunAnalysis();
     }
-  }, [loadingInitial]);
+  }, [loadingInitial, selectedResumeId, selectedJobId, analysisResult, analysisError, analyzing, handleRunAnalysis]);
+
+  const selectedResumeObj = resumes.find((r) => r.id === Number(selectedResumeId)) || null;
 
   if (loadingInitial) {
     return <LoadingSpinner message="Initializing ATS Matcher engine..." />;
@@ -174,23 +261,117 @@ export const ResumeAnalysisPage: React.FC = () => {
             </div>
 
             {resumeMode === 'select' ? (
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2">Choose Uploaded Resume</label>
-                {resumes.length > 0 ? (
-                  <select
-                    value={selectedResumeId}
-                    onChange={(e) => setSelectedResumeId(Number(e.target.value))}
-                    className="w-full p-3 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                  >
-                    {resumes.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.filename} ({r.extracted_experience_years} yrs exp, {r.skills?.length || 0} skills)
-                      </option>
-                    ))}
-                  </select>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-600">
+                    {isRecruiterOrAdmin
+                      ? `Select Candidate Resume (${resumes.length})`
+                      : `Choose Uploaded Resume (${resumes.length})`}
+                  </label>
+                  {user?.role === 'JOB_SEEKER' && (
+                    <Link
+                      to="/dashboard/resumes"
+                      className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                    >
+                      <Upload className="w-3 h-3" />
+                      <span>Upload New</span>
+                    </Link>
+                  )}
+                </div>
+
+                {resumesError ? (
+                  <div className="p-4 bg-rose-50 rounded-xl text-xs text-rose-700 border border-rose-200 flex items-center justify-between gap-2">
+                    <span>{resumesError}</span>
+                    <button
+                      type="button"
+                      onClick={loadResources}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 font-semibold text-[11px] hover:bg-rose-100"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : !user ? (
+                  <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500 border border-slate-100 space-y-2">
+                    <p>Sign in to select from your saved resumes, or use "Paste Text".</p>
+                    <Link
+                      to="/login"
+                      className="inline-block px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold text-[11px]"
+                    >
+                      Sign In
+                    </Link>
+                  </div>
+                ) : resumes.length > 0 ? (
+                  <>
+                    <select
+                      value={selectedResumeId}
+                      onChange={(e) => setSelectedResumeId(Number(e.target.value))}
+                      className="w-full p-3 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    >
+                      {resumes.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {isRecruiterOrAdmin && r.candidate_name ? `${r.candidate_name} — ` : ''}
+                          {r.filename} {r.is_primary && !isRecruiterOrAdmin ? '(Active)' : ''} ({r.extracted_experience_years} yrs exp, {r.skills?.length || 0} skills)
+                        </option>
+                      ))}
+                    </select>
+
+                    {selectedResumeObj && (
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/70 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-slate-800 truncate">
+                            {isRecruiterOrAdmin && selectedResumeObj.candidate_name
+                              ? `${selectedResumeObj.candidate_name} (${selectedResumeObj.filename})`
+                              : `Selected: ${selectedResumeObj.filename}`}
+                          </span>
+                          {!isRecruiterOrAdmin && (
+                            selectedResumeObj.is_primary ? (
+                              <Badge variant="success" size="sm">Active Resume</Badge>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={settingPrimary}
+                                onClick={() => handleSetActiveResume(selectedResumeObj.id)}
+                                className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 transition disabled:opacity-50"
+                              >
+                                {settingPrimary ? 'Setting...' : 'Set Active'}
+                              </button>
+                            )
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedResumeObj.skills?.slice(0, 8).map((s, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] font-medium text-slate-600"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                          {selectedResumeObj.skills && selectedResumeObj.skills.length > 8 && (
+                            <span className="text-[10px] text-slate-400 self-center">
+                              +{selectedResumeObj.skills.length - 8} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500 border border-slate-100">
-                    No resumes uploaded. Switch to "Paste Text" or upload one first.
+                  <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500 border border-slate-100 space-y-2">
+                    <p>
+                      {isRecruiterOrAdmin
+                        ? 'No candidate resumes available yet. Switch to "Paste Text" to screen a custom resume.'
+                        : 'No resumes uploaded yet. Switch to "Paste Text" or upload a PDF/DOCX resume.'}
+                    </p>
+                    {user?.role === 'JOB_SEEKER' && (
+                      <Link
+                        to="/dashboard/resumes"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[11px]"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>Upload Resume</span>
+                      </Link>
+                    )}
                   </div>
                 )}
               </div>
@@ -238,19 +419,57 @@ export const ResumeAnalysisPage: React.FC = () => {
             </div>
 
             {jobMode === 'select' ? (
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2">Choose Active Job Posting</label>
-                <select
-                  value={selectedJobId}
-                  onChange={(e) => setSelectedJobId(Number(e.target.value))}
-                  className="w-full p-3 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                >
-                  {jobs.map((j) => (
-                    <option key={j.id} value={j.id}>
-                      {j.title} @ {j.company} ({j.location})
-                    </option>
-                  ))}
-                </select>
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-600">
+                  {user?.role === 'RECRUITER'
+                    ? `Choose Your Job Posting (${jobs.length})`
+                    : `Choose Job Posting (${jobs.length})`}
+                </label>
+
+                {jobsError ? (
+                  <div className="p-4 bg-rose-50 rounded-xl text-xs text-rose-700 border border-rose-200 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>{jobsError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={loadResources}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-rose-200 font-semibold text-[11px] hover:bg-rose-100 shrink-0"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : jobs.length > 0 ? (
+                  <select
+                    value={selectedJobId}
+                    onChange={(e) => setSelectedJobId(Number(e.target.value))}
+                    className="w-full p-3 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                  >
+                    {jobs.map((j) => (
+                      <option key={j.id} value={j.id}>
+                        {j.title} @ {j.company} ({j.location}){!j.is_active ? ' [Closed]' : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500 border border-slate-100 space-y-2">
+                    <p>
+                      {user?.role === 'RECRUITER'
+                        ? 'You have not posted any jobs yet. Create a job posting or switch to "Custom JD".'
+                        : 'No job postings found. Switch to "Custom JD" to paste a job description.'}
+                    </p>
+                    {isRecruiterOrAdmin && (
+                      <Link
+                        to={user?.role === 'ADMIN' ? '/admin/jobs?create=1' : '/recruiter/jobs?create=1'}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[11px]"
+                      >
+                        <Briefcase className="w-3 h-3" />
+                        <span>Post a Job</span>
+                      </Link>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -278,6 +497,13 @@ export const ResumeAnalysisPage: React.FC = () => {
             )}
           </div>
         </div>
+
+        {analysisError && (
+          <div className="mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{analysisError}</span>
+          </div>
+        )}
 
         {/* Action Button */}
         <div className="mt-6 pt-5 border-t border-slate-100 flex items-center justify-end">

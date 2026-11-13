@@ -1,6 +1,14 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const resolveApiBaseUrl = (): string => {
+  const configured = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  if (configured) {
+    return configured.endsWith('/api') ? configured : `${configured}/api`;
+  }
+  return import.meta.env.DEV ? 'http://localhost:8000/api' : '/api';
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -9,8 +17,11 @@ export const api = axios.create({
   },
 });
 
-// Attach JWT token to requests if available
+// Attach JWT token to requests if available and ensure FormData sets its own boundary
 api.interceptors.request.use((config) => {
+  if (config.data instanceof FormData && config.headers) {
+    delete config.headers['Content-Type'];
+  }
   const token = localStorage.getItem('tm_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -33,4 +44,3 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-

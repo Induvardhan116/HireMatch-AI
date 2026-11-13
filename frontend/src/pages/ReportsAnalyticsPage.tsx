@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BarChart3,
   Download,
@@ -10,7 +10,9 @@ import {
   FileSpreadsheet,
   PieChart as PieIcon,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import {
   BarChart,
@@ -36,6 +38,7 @@ export const ReportsAnalyticsPage: React.FC = () => {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<ReportTab>('screening');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Data states for the 4 reports
   const [screeningReport, setScreeningReport] = useState<any[]>([]);
@@ -43,54 +46,102 @@ export const ReportsAnalyticsPage: React.FC = () => {
   const [applicationsReport, setApplicationsReport] = useState<any[]>([]);
   const [summaryReport, setSummaryReport] = useState<any | null>(null);
 
-  const fetchReports = async () => {
+  const fetchReports = useCallback(async () => {
     setLoading(true);
-    try {
-      const [resScreening, resSkills, resApps, resSummary] = await Promise.all([
-        api.get('/analytics/reports/resume-screening'),
-        api.get('/analytics/reports/candidate-skills'),
-        api.get('/analytics/reports/job-applications'),
-        api.get('/analytics/reports/recruitment-summary'),
-      ]);
-      setScreeningReport(resScreening.data);
-      setSkillsReport(resSkills.data);
-      setApplicationsReport(resApps.data);
-      setSummaryReport(resSummary.data);
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to fetch reporting analytics.', 'error');
-    } finally {
-      setLoading(false);
+    setLoadError(null);
+    const [resScreening, resSkills, resApps, resSummary] = await Promise.allSettled([
+      api.get('/analytics/reports/resume-screening'),
+      api.get('/analytics/reports/candidate-skills'),
+      api.get('/analytics/reports/job-applications'),
+      api.get('/analytics/reports/recruitment-summary'),
+    ]);
+
+    let failedCount = 0;
+
+    if (resScreening.status === 'fulfilled') {
+      setScreeningReport(Array.isArray(resScreening.value.data) ? resScreening.value.data : []);
+    } else {
+      console.error(resScreening.reason);
+      setScreeningReport([]);
+      failedCount++;
     }
-  };
+
+    if (resSkills.status === 'fulfilled') {
+      setSkillsReport(resSkills.value.data ?? null);
+    } else {
+      console.error(resSkills.reason);
+      setSkillsReport(null);
+      failedCount++;
+    }
+
+    if (resApps.status === 'fulfilled') {
+      setApplicationsReport(Array.isArray(resApps.value.data) ? resApps.value.data : []);
+    } else {
+      console.error(resApps.reason);
+      setApplicationsReport([]);
+      failedCount++;
+    }
+
+    if (resSummary.status === 'fulfilled') {
+      setSummaryReport(resSummary.value.data ?? null);
+    } else {
+      console.error(resSummary.reason);
+      setSummaryReport(null);
+      failedCount++;
+    }
+
+    if (failedCount > 0) {
+      const msg =
+        failedCount === 4
+          ? 'Failed to fetch reporting analytics.'
+          : `${failedCount} report sections could not be loaded.`;
+      setLoadError(msg);
+      showToast(msg, 'error');
+    }
+
+    setLoading(false);
+  }, [showToast]);
 
   useEffect(() => {
     fetchReports();
-  }, []);
+  }, [fetchReports]);
 
-  const handleExportCSV = (endpoint: string, filename: string) => {
+  const statusPieData = useMemo(() => {
+    if (!summaryReport?.applications_by_status || typeof summaryReport.applications_by_status !== 'object') {
+      return [];
+    }
+    return Object.entries(summaryReport.applications_by_status)
+      .map(([key, val]) => ({
+        name: key,
+        value: typeof val === 'number' ? val : Number(val) || 0,
+      }))
+      .filter((item) => item.value > 0);
+  }, [summaryReport]);
+
+  const handleExportCSV = async (endpoint: string, filename: string) => {
     const token = localStorage.getItem('tm_token');
     const url = `${api.defaults.baseURL}/analytics/reports/${endpoint}?format=csv`;
 
-    // Trigger download via fetch with auth header
-    fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then((res) => res.blob())
-      .then((blob) => {
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast(`Exported ${filename} successfully!`, 'success');
-      })
-      .catch(() => {
-        showToast('Failed to export CSV report.', 'error');
+    try {
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+      if (!res.ok) {
+        throw new Error(`Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(objectUrl);
+      showToast(`Exported ${filename} successfully!`, 'success');
+    } catch {
+      showToast('Failed to export CSV report.', 'error');
+    }
   };
 
   if (loading) {
@@ -99,14 +150,6 @@ export const ReportsAnalyticsPage: React.FC = () => {
 
   // Chart color palette
   const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#3b82f6', '#8b5cf6'];
-
-  // Status breakdown data for pie chart
-  const statusPieData = summaryReport?.applications_by_status
-    ? Object.entries(summaryReport.applications_by_status).map(([key, val]) => ({
-        name: key,
-        value: val,
-      }))
-    : [];
 
   return (
     <div className="space-y-8">
@@ -125,6 +168,7 @@ export const ReportsAnalyticsPage: React.FC = () => {
 
         {/* Export Button for Current Tab */}
         <button
+          type="button"
           onClick={() => {
             const map: Record<ReportTab, { end: string; name: string }> = {
               screening: { end: 'resume-screening', name: 'resume_screening_report.csv' },
@@ -142,9 +186,27 @@ export const ReportsAnalyticsPage: React.FC = () => {
         </button>
       </div>
 
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-rose-800">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchReports}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100 transition self-start sm:self-auto"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
       {/* Report Tabs Navigation */}
       <div className="flex p-1 bg-white rounded-2xl border border-slate-200/80 shadow-sm max-w-3xl">
         <button
+          type="button"
           onClick={() => setActiveTab('screening')}
           className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${
             activeTab === 'screening'
@@ -155,6 +217,7 @@ export const ReportsAnalyticsPage: React.FC = () => {
           1. Resume Screening
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('skills')}
           className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${
             activeTab === 'skills'
@@ -165,6 +228,7 @@ export const ReportsAnalyticsPage: React.FC = () => {
           2. Skill Analysis
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('applications')}
           className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${
             activeTab === 'applications'
@@ -175,6 +239,7 @@ export const ReportsAnalyticsPage: React.FC = () => {
           3. Job Applications
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('summary')}
           className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${
             activeTab === 'summary'
@@ -263,7 +328,8 @@ export const ReportsAnalyticsPage: React.FC = () => {
       )}
 
       {/* REPORT 2: Candidate Skill Analysis Report */}
-      {activeTab === 'skills' && skillsReport && (
+      {activeTab === 'skills' && (
+        skillsReport ? (
         <div className="space-y-6">
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -271,16 +337,22 @@ export const ReportsAnalyticsPage: React.FC = () => {
             <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm">
               <h3 className="text-sm font-bold text-slate-900 mb-1">Most Common Candidate Skills</h3>
               <p className="text-xs text-slate-500 mb-6">Distribution across all uploaded candidate resumes</p>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={skillsReport.top_candidate_skills?.slice(0, 7) || []}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="skill" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="candidate_count" name="Candidates" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="h-64 w-full min-w-0">
+                {(skillsReport.top_candidate_skills?.length ?? 0) > 0 ? (
+                  <ResponsiveContainer width="100%" height={256} minWidth={0}>
+                    <BarChart data={skillsReport.top_candidate_skills.slice(0, 7)}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="skill" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="candidate_count" name="Candidates" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                    No candidate skill metrics recorded yet.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -288,16 +360,22 @@ export const ReportsAnalyticsPage: React.FC = () => {
             <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm">
               <h3 className="text-sm font-bold text-slate-900 mb-1">Top In-Demand Requisition Skills</h3>
               <p className="text-xs text-slate-500 mb-6">Required technical skills requested across active jobs</p>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={skillsReport.top_in_demand_job_skills?.slice(0, 7) || []}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="skill" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="candidate_count" name="Job Postings" fill="#10b981" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="h-64 w-full min-w-0">
+                {(skillsReport.top_in_demand_job_skills?.length ?? 0) > 0 ? (
+                  <ResponsiveContainer width="100%" height={256} minWidth={0}>
+                    <BarChart data={skillsReport.top_in_demand_job_skills.slice(0, 7)}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="skill" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="candidate_count" name="Job Postings" fill="#10b981" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                    No active job skill requirements found yet.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -337,6 +415,11 @@ export const ReportsAnalyticsPage: React.FC = () => {
             </div>
           </div>
         </div>
+        ) : (
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-8 text-center text-xs text-slate-500">
+            Skill analysis report data is currently unavailable. Try clicking Retry above.
+          </div>
+        )
       )}
 
       {/* REPORT 3: Job Application Report */}
@@ -398,7 +481,8 @@ export const ReportsAnalyticsPage: React.FC = () => {
       )}
 
       {/* REPORT 4: Recruitment Summary Report */}
-      {activeTab === 'summary' && summaryReport && (
+      {activeTab === 'summary' && (
+        summaryReport ? (
         <div className="space-y-6">
           {/* Key Metric Tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -430,26 +514,30 @@ export const ReportsAnalyticsPage: React.FC = () => {
             <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm">
               <h3 className="text-sm font-bold text-slate-900 mb-1">Applications by Pipeline Stage</h3>
               <p className="text-xs text-slate-500 mb-4">Stage distribution across candidate lifecycle</p>
-              <div className="h-64 flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statusPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {statusPieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="h-64 w-full min-w-0 flex items-center justify-center">
+                {statusPieData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={256} minWidth={0}>
+                    <PieChart>
+                      <Pie
+                        data={statusPieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {statusPieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-xs text-slate-400">No application stage metrics available yet.</p>
+                )}
               </div>
             </div>
 
@@ -478,6 +566,11 @@ export const ReportsAnalyticsPage: React.FC = () => {
             </div>
           </div>
         </div>
+        ) : (
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-8 text-center text-xs text-slate-500">
+            Recruitment summary data is currently unavailable. Try clicking Retry above.
+          </div>
+        )
       )}
     </div>
   );

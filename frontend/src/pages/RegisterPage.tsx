@@ -12,11 +12,6 @@ export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // If already authenticated, never display registration form -> redirect to canonical dashboard
-  if (!isLoading && user) {
-    return <Navigate to={getDashboardRoute(user.role)} replace />;
-  }
-
   const [role, setRole] = useState<UserRole>('JOB_SEEKER');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -39,6 +34,11 @@ export const RegisterPage: React.FC = () => {
       setRole('JOB_SEEKER');
     }
   }, [searchParams]);
+
+  // If already authenticated, never display registration form -> redirect to canonical dashboard
+  if (!isLoading && user) {
+    return <Navigate to={getDashboardRoute(user.role)} replace />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,9 +75,9 @@ export const RegisterPage: React.FC = () => {
       showToast(`Welcome to HireMatch AI, ${user.full_name}!`, 'success');
 
       if (user.role === 'RECRUITER') {
-        navigate('/recruiter');
+        navigate('/recruiter', { replace: true });
       } else {
-        navigate('/dashboard');
+        navigate('/dashboard', { replace: true });
       }
     } catch (err: any) {
       const msg = err.response?.data?.detail || 'Registration failed. Email might already be taken.';

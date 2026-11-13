@@ -11,6 +11,8 @@ class ResumeResponse(ResumeBase):
     id: int
     user_id: int
     is_primary: bool
+    candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
     summary: Optional[str] = None
     extracted_experience_years: float
     skills: List[str] = []

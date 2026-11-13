@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Sparkles,
   Briefcase,
@@ -10,7 +10,9 @@ import {
   XCircle,
   ArrowRight,
   Send,
-  X
+  X,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../services/api';
 import { Job, Resume } from '../types';
@@ -21,9 +23,11 @@ import { EmptyState } from '../components/common/EmptyState';
 
 export const JobRecommendationsPage: React.FC = () => {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [recommendations, setRecommendations] = useState<Job[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Application Modal state
   const [applyModalJob, setApplyModalJob] = useState<Job | null>(null);
@@ -31,28 +35,41 @@ export const JobRecommendationsPage: React.FC = () => {
   const [coverNote, setCoverNote] = useState('');
   const [applying, setApplying] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [recRes, resumesRes] = await Promise.all([
-          api.get<Job[]>('/jobs/recommendations/me'),
-          api.get<Resume[]>('/resumes/')
-        ]);
-        setRecommendations(recRes.data);
-        setResumes(resumesRes.data);
-        if (resumesRes.data.length > 0) {
-          const primary = resumesRes.data.find(r => r.is_primary) || resumesRes.data[0];
-          setSelectedResumeId(primary.id);
-        }
-      } catch (err) {
-        console.error(err);
-        showToast('Failed to load personalized job recommendations.', 'error');
-      } finally {
-        setLoading(false);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    const [recResult, resumesResult] = await Promise.allSettled([
+      api.get<Job[]>('/jobs/recommendations/me'),
+      api.get<Resume[]>('/resumes/')
+    ]);
+
+    if (recResult.status === 'fulfilled') {
+      setRecommendations(Array.isArray(recResult.value.data) ? recResult.value.data : []);
+    } else {
+      console.error(recResult.reason);
+      setRecommendations([]);
+      setLoadError('Failed to load personalized job recommendations.');
+      showToast('Failed to load personalized job recommendations.', 'error');
+    }
+
+    if (resumesResult.status === 'fulfilled') {
+      const resumeList = Array.isArray(resumesResult.value.data) ? resumesResult.value.data : [];
+      setResumes(resumeList);
+      if (resumeList.length > 0) {
+        const primary = resumeList.find(r => r.is_primary) || resumeList[0];
+        setSelectedResumeId(primary.id);
       }
-    };
+    } else {
+      console.error(resumesResult.reason);
+      setResumes([]);
+    }
+
+    setLoading(false);
+  }, [showToast]);
+
+  useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,13 +114,30 @@ export const JobRecommendationsPage: React.FC = () => {
         </p>
       </div>
 
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-rose-800">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchData}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100 transition self-start sm:self-auto"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
       {recommendations.length === 0 ? (
         <EmptyState
           icon={Briefcase}
           title="No Matching Jobs Found"
           description="Try uploading a resume with more technical skills or browse all open positions."
           actionText="Browse All Jobs"
-          onAction={() => {}}
+          onAction={() => navigate('/dashboard/jobs')}
         />
       ) : (
         <div className="space-y-4">
@@ -178,7 +212,7 @@ export const JobRecommendationsPage: React.FC = () => {
 
                   <div className="flex items-center gap-2">
                     <Link
-                      to="/matcher"
+                      to={`/dashboard/matcher?jobId=${job.id}`}
                       className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition"
                     >
                       Detailed Scan

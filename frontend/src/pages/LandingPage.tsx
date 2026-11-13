@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   Sparkles,
   CheckCircle2,
@@ -26,7 +26,20 @@ import { getDashboardRoute } from '../utils/navigation';
 export const LandingPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (location.hash) {
+      const targetId = location.hash.replace('#', '');
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    } else {
+      window.scrollTo({ top: 0 });
+    }
+  }, [location.hash]);
 
   const handleGetStarted = () => {
     if (user) {
@@ -312,7 +325,7 @@ export const LandingPage: React.FC = () => {
             <span>– Enterprise Full-Stack ATS & Recruitment Portal</span>
           </div>
           <div>
-            Built with React, TypeScript, FastAPI, PyMuPDF, Scikit-Learn, Docker & Kubernetes.
+            &copy; {new Date().getFullYear()} HireMatch AI. All rights reserved.
           </div>
         </div>
       </footer>

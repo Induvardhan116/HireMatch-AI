@@ -1,33 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Briefcase,
   Plus,
   Edit2,
   Trash2,
-  MapPin,
-  Clock,
-  DollarSign,
-  X,
-  CheckCircle2,
-  Users,
-  Search
+  AlertTriangle,
+  RefreshCw,
+  Power,
+  X
 } from 'lucide-react';
-import { api } from '../services/api';
+import {
+  createJobPosting,
+  deleteJobPosting,
+  extractApiError,
+  fetchManagedJobs,
+  updateJobPosting,
+} from '../services/jobService';
 import { Job } from '../types';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { Badge } from '../components/common/Badge';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { EmptyState } from '../components/common/EmptyState';
 
 export const ManageJobsPage: React.FC = () => {
+  const { user } = useAuth();
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   // Form Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Delete Confirmation Modal state
+  const [deletingJob, setDeletingJob] = useState<Job | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Form Fields
   const [title, setTitle] = useState('');
@@ -43,25 +56,45 @@ export const ManageJobsPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [requirements, setRequirements] = useState('');
 
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
     try {
-      const resp = await api.get<Job[]>('/jobs/', { params: { active_only: false } });
-      setJobs(resp.data);
-    } catch (err) {
-      showToast('Failed to load jobs.', 'error');
+      const data = await fetchManagedJobs();
+      setJobs(data);
+    } catch (err: any) {
+      const text = extractApiError(err, 'Failed to load job postings.');
+      setLoadError(text);
+      showToast(text, 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
   useEffect(() => {
     fetchJobs();
-  }, []);
+  }, [fetchJobs]);
+
+  const handleToggleJobActive = async (job: Job) => {
+    setTogglingId(job.id);
+    try {
+      const updated = await updateJobPosting(job.id, { is_active: !job.is_active });
+      setJobs((prev) => prev.map((j) => (j.id === job.id ? updated : j)));
+      showToast(
+        `Job "${job.title}" is now ${updated.is_active ? 'Active' : 'Closed'}.`,
+        'success'
+      );
+    } catch (err: any) {
+      showToast(extractApiError(err, 'Failed to update job status.'), 'error');
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const openCreateModal = () => {
     setEditingJob(null);
     setTitle('');
-    setCompany('CloudScale Technologies');
+    setCompany(user?.company_name || '');
     setDepartment('Engineering');
     setLocation('Remote');
     setJobType('Full-time');
@@ -74,6 +107,14 @@ export const ManageJobsPage: React.FC = () => {
     setRequirements('');
     setIsModalOpen(true);
   };
+
+  useEffect(() => {
+    if (!loading && searchParams.get('create') === '1') {
+      openCreateModal();
+      searchParams.delete('create');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [loading, searchParams]);
 
   const openEditModal = (job: Job) => {
     setEditingJob(job);
@@ -120,31 +161,34 @@ export const ManageJobsPage: React.FC = () => {
     setSubmitting(true);
     try {
       if (editingJob) {
-        const resp = await api.put<Job>(`/jobs/${editingJob.id}`, payload);
+        const updated = await updateJobPosting(editingJob.id, payload);
         showToast('Job posting updated successfully!', 'success');
-        setJobs(jobs.map((j) => (j.id === editingJob.id ? resp.data : j)));
+        setJobs((prev) => prev.map((j) => (j.id === editingJob.id ? updated : j)));
       } else {
-        const resp = await api.post<Job>('/jobs/', payload);
+        const created = await createJobPosting(payload);
         showToast('New job requisition created successfully!', 'success');
-        setJobs([resp.data, ...jobs]);
+        setJobs((prev) => [created, ...prev]);
       }
       setIsModalOpen(false);
     } catch (err: any) {
-      const msg = err.response?.data?.detail || 'Failed to save job posting.';
-      showToast(msg, 'error');
+      showToast(extractApiError(err, 'Failed to save job posting.'), 'error');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDeleteJob = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this job posting?')) return;
+  const handleConfirmDelete = async () => {
+    if (!deletingJob) return;
+    setDeleting(true);
     try {
-      await api.delete(`/jobs/${id}`);
-      showToast('Job posting deleted.', 'info');
-      setJobs(jobs.filter((j) => j.id !== id));
-    } catch (err) {
-      showToast('Failed to delete job posting.', 'error');
+      await deleteJobPosting(deletingJob.id);
+      showToast(`Deleted "${deletingJob.title}" successfully.`, 'info');
+      setJobs((prev) => prev.filter((j) => j.id !== deletingJob.id));
+      setDeletingJob(null);
+    } catch (err: any) {
+      showToast(extractApiError(err, 'Failed to delete job posting.'), 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -157,12 +201,17 @@ export const ManageJobsPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Manage Job Postings</h1>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+            {user?.role === 'ADMIN' ? 'Manage All Job Postings' : 'Manage Job Postings'}
+          </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Create, edit, and organize requisitions with customized skill taxonomies.
+            {user?.role === 'ADMIN'
+              ? 'Oversee active and closed platform requisitions, skills, and hiring availability.'
+              : 'Create, edit, activate, or close your requisitions with customized skill taxonomies.'}
           </p>
         </div>
         <button
+          type="button"
           onClick={openCreateModal}
           className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition shadow-sm hover:shadow flex items-center gap-2"
         >
@@ -170,6 +219,23 @@ export const ManageJobsPage: React.FC = () => {
           <span>Post New Job</span>
         </button>
       </div>
+
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-rose-800">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchJobs}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-700 font-semibold hover:bg-rose-100 transition self-start sm:self-auto"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
 
       {/* Jobs Table */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
@@ -226,6 +292,20 @@ export const ManageJobsPage: React.FC = () => {
                     </td>
                     <td className="py-4 px-6 text-right space-x-2">
                       <button
+                        type="button"
+                        disabled={togglingId === job.id}
+                        onClick={() => handleToggleJobActive(job)}
+                        className={`p-1.5 rounded-lg transition disabled:opacity-50 ${
+                          job.is_active
+                            ? 'text-emerald-600 hover:text-amber-600 hover:bg-amber-50'
+                            : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
+                        }`}
+                        title={job.is_active ? 'Deactivate posting' : 'Activate posting'}
+                      >
+                        <Power className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => openEditModal(job)}
                         className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition"
                         title="Edit job"
@@ -233,7 +313,8 @@ export const ManageJobsPage: React.FC = () => {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDeleteJob(job.id)}
+                        type="button"
+                        onClick={() => setDeletingJob(job)}
                         className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition"
                         title="Delete job"
                       >
@@ -447,6 +528,45 @@ export const ManageJobsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingJob && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete Job Posting?</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Are you sure you want to permanently delete{' '}
+                  <span className="font-semibold text-slate-800">{deletingJob.title}</span>? Any
+                  applications submitted to this posting will also be removed.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeletingJob(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-sm disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete Job'}
+              </button>
+            </div>
           </div>
         </div>
       )}

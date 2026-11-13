@@ -28,6 +28,10 @@ class UserUpdate(BaseModel):
     current_title: Optional[str] = None
     company_name: Optional[str] = None
 
+
+class AdminUserUpdate(UserUpdate):
+    is_active: Optional[bool] = None
+
 class UserResponse(UserBase):
     id: int
     is_active: bool
